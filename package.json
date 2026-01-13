@@ -9,6 +9,7 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@google/genai": "^1.35.0",
     "@google/generative-ai": "^0.24.1",
     "face-api.js": "^0.22.2",
     "next": "16.1.1",

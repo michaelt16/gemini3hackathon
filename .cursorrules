@@ -1,0 +1,192 @@
+# .cursorrules — Living Memory (Hackathon MVP)
+
+## Project summary (read first)
+You are assisting on "Living Memory": a living photo album that preserves family stories across generations.
+Core idea: Photos alone lose context. This app reconstructs context by collecting multi-perspective stories from friends/family, stores it as an event knowledge base, then generates a stitched recap video from animated photos.
+
+This must NOT become an "AI wrapper" (upload photo -> generic questions -> animate). The value is compounding context:
+- multi-contributor inputs
+- event-level knowledge base
+- extracted facts/timeline/people entities
+- visible collaborator contributions
+- optional/limited animation as output artifact
+
+## Primary user value
+- Preserve stories linked to photos so future generations understand "why it mattered"
+- Merge multiple perspectives for the same event into one coherent story
+- Produce an artifact: a stitched recap video for the event
+
+## Non-goals (avoid scope blow-ups)
+- No full social network features
+- No perfect face recognition (start with manual tagging + optional clustering suggestions later)
+- No native mobile app requirement (PWA/mobile-first web is acceptable)
+- No complex family tree module in MVP
+- No heavy microservice architecture
+
+## Architecture (Next.js + Vercel-friendly)
+We use Next.js for UI + API routes (Route Handlers) and a DB + Storage (e.g., Supabase).
+All model calls (Gemini Live, Veo) must happen server-side in Next.js API routes or server-only modules. Never expose API keys to the client.
+
+Because Vercel is serverless, long running tasks must be job-based:
+- Use a `jobs` table for extract/animate/stitch
+- Use a worker mechanism (prefer Supabase Edge Function cron, or a small external worker)
+- UI polls job status for progress
+
+## Apps / experiences (can be 1 Next.js app with two modes)
+We conceptually have two frontends:
+1) Capture Mode (mobile-first):
+   - Upload photos into an Event
+   - Start Live conversation about a photo/event (Gemini Live)
+   - Store transcripts/snippets in backend
+   - Suggest follow-up questions to fill missing context
+   - **Camera Mode**: Open camera for continuous capture while conversing
+2) Album Mode (desktop-friendly):
+   - Event library + event detail view
+   - Timeline, people, contributor list
+   - Media grid (original + animated)
+   - Recap video player (stitched)
+   - Shows what each collaborator added
+
+Implementation can be a single Next.js app with routes:
+- /capture/... and /album/... sharing components + design system
+
+## Camera Mode - Continuous Capture Feature
+When user opens camera in Capture Mode, enable simultaneous conversation + background photo processing:
+
+**User Experience:**
+- Camera view is active and visible
+- Gemini Live conversation runs concurrently (audio or text)
+- User can talk naturally while pointing camera at photo book/album
+- No interruption to conversation flow
+
+**Background Processing Pipeline:**
+1. **Continuous Capture**: Camera takes images at intervals (e.g., every 2-3 seconds) or on motion detection
+2. **Photo Detection**: Detect if captured frame contains a photo/book page (not just random camera view)
+   - Use image classification or simple heuristics (rectangular borders, paper texture, etc.)
+   - Only process frames that look like photos/pages
+3. **Crop & Extract**: When photo detected in frame:
+   - Detect photo boundaries within camera frame
+   - Crop the photo region from camera view
+   - Store cropped photo temporarily
+4. **Background Upload**: Send cropped photos to backend asynchronously
+   - POST /api/media with cropped image
+   - Associate with current event
+   - Don't block conversation UI
+5. **Animation Queue**: Backend queues cropped photos for animation
+   - Add to animation job queue
+   - Process in background (user doesn't wait)
+
+**Technical Implementation:**
+- Use `getUserMedia()` for camera access
+- Canvas API for frame capture and cropping
+- Image detection: simple ML model or heuristics (detect rectangular photo-like regions)
+- Web Workers for image processing to avoid blocking UI
+- Queue system: store detected photos locally first, batch upload
+- Show subtle indicator when photo detected ("📸 Photo captured") without interrupting conversation
+
+**API Endpoints:**
+- POST /api/camera/capture (receive cropped photo, queue for processing)
+- GET /api/camera/status (check if camera mode is active)
+
+**Key UX Principle**: Conversation is primary, photo capture is secondary. User should feel like they're just talking while camera "listens" and captures photos naturally.
+
+## Data model (minimum tables)
+- events(id, title, date_start, date_end, location, created_by, summary, cover_media_id, created_at)
+- media(id, event_id, uploader_id, photo_url, animated_url, taken_at, created_at)
+- people(id, event_id, name, avatar_url)
+- media_people(media_id, person_id)
+- snippets(id, event_id, media_id nullable, author_id, transcript, created_at)
+- facts(id, event_id, type, value, source_snippet_id, confidence)  // optional but recommended
+- jobs(id, type extract|animate|stitch, event_id, media_id nullable, status queued|running|done|error, progress, result_url, error, created_at)
+
+## Gemini Live API integration
+Gemini Live API enables real-time, streaming conversations with audio input/output. Used in Capture Mode for natural interviews.
+
+**Implementation pattern:**
+- Client connects to Next.js API route (e.g., `/api/live/connect`)
+- Server establishes connection to Gemini Live API (WebSocket or streaming)
+- Server acts as proxy: client ↔ Next.js ↔ Gemini Live
+- Audio streams bidirectionally (user speech → Gemini, Gemini response → user)
+- Transcript chunks saved to `snippets` table in real-time
+- Connection must be server-side only (API key never exposed)
+
+**Key considerations:**
+- Use Next.js streaming responses or WebSocket upgrade in API route
+- Handle connection lifecycle (connect, disconnect, errors)
+- Buffer transcript chunks and save periodically (not every word)
+- Show real-time transcript in UI while conversation flows
+- After conversation ends, trigger extraction job on full transcript
+- Consider connection timeout/limits for Vercel serverless constraints
+
+**Alternative for MVP:** If Live API is complex, start with regular Gemini API + streaming text responses, then upgrade to Live API for audio later.
+
+## AI responsibilities (must be structured, not one-shot)
+AI pipeline steps:
+1) Capture: store transcript snippet (raw) - from Gemini Live conversation
+2) Extract: transcript -> structured facts (time, location, participants, relationships, key moments) + timeline bullets + event summary update
+3) Reconcile: merge multi-perspective inputs; if conflicts exist, label them (e.g., "date disagreement")
+4) Produce: animate selected photos + stitch into a recap video (chapters optional)
+
+Important: Animation is output icing. The app must still feel valuable without animation.
+
+## Interview question style (avoid generic)
+Avoid: "Who is this?" "Where was this?"
+Prefer:
+- "Who is missing from this moment?"
+- "What changed right after this photo?"
+- "Was this before/after a conflict or milestone?"
+- "What would future-you want to know about this day?"
+- "What did you not understand then that you understand now?"
+Make questions adaptive: ask only missing fields.
+
+## API design (Next.js Route Handlers)
+- POST /api/events  (create)
+- GET /api/events   (list)
+- GET /api/events/:id (full event view)
+- POST /api/media   (create record + return signed upload URL)
+- POST /api/media/:id/complete
+- POST /api/snippets (save transcript)
+- POST /api/live/connect (establish Gemini Live connection - streaming/WebSocket)
+- POST /api/live/disconnect (close connection)
+- POST /api/camera/capture (receive cropped photo from camera, queue for animation)
+- GET /api/camera/status (check camera mode status)
+- POST /api/extract  (enqueue or run extraction job)
+- POST /api/events/:id/animate (enqueue animate jobs per media)
+- POST /api/events/:id/stitch  (enqueue stitch job)
+- GET /api/jobs/:id (status)
+All endpoints must validate input with Zod.
+
+## Security & cost control
+- Never call Gemini/Veo directly from the browser
+- Use basic rate limiting on write/generate endpoints
+- Ensure event access is protected (owner + invited collaborators)
+- Log all generation jobs with user + event references
+
+## UX constraints (hackathon polish)
+- Progress UI for jobs: "Animating 3/12" "Stitching..."
+- Clear collaborator attribution: "Added by X"
+- Show event timeline and people list updating after each snippet
+- Make demo flow fast: one event, two contributors, generate recap
+
+## Code style
+- TypeScript everywhere
+- Zod schema validation for API inputs/outputs
+- Keep files small and modular:
+  - lib/db.ts, lib/storage.ts, lib/jobs.ts, lib/ai/extract.ts, lib/ai/questions.ts
+- Prefer server actions only when it simplifies; otherwise API routes
+- Use React Query or SWR for fetching + polling job status
+
+## Deliverable priorities (order)
+1) Events + media upload + storage
+2) Snippet capture + save transcript
+3) Extract facts/timeline + event summary update
+4) Album UI (timeline, people, contributors, media grid)
+5) Jobs + animate + stitch + recap video player
+
+## When unsure
+If asked to implement a feature, always ask:
+- Does it strengthen "compounding event knowledge base"?
+- Does it help demo clarity?
+If not, deprioritize.
+
+End of rules.
