@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Count user turns (for wrap-up guidance)
-    const turnCount = conversationHistory.filter(m => m.role === 'user').length;
+    const turnCount = conversationHistory.filter((m: { role: string }) => m.role === 'user').length;
 
     // Build the prompt with full context
     const prompt = buildConversationPrompt(

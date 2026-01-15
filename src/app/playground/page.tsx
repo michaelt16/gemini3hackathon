@@ -1,7 +1,15 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { PhotoAnalysis, ConversationMessage, ChatResponse, SynthesisResponse } from '@/lib/types';
+import { PhotoAnalysis, ConversationMessage, ChatResponse, SynthesisResponse, ConversationSession, LiveConversationMessage, GeneratedStory } from '@/lib/types';
+import { 
+  saveSession, 
+  updateSession, 
+  saveMessage, 
+  getAssociatedPhotoIds,
+  getSession,
+  getSessionMessages,
+} from '@/lib/storage/conversation-storage';
 import { 
   loadFaceModels, 
   detectFaces, 
@@ -19,6 +27,17 @@ import {
   type MemoryBank,
 } from '@/lib/memory-bank';
 import { GeminiLiveClient, getAuthToken } from '@/lib/gemini-live';
+import { useCamera } from '@/hooks/use-camera';
+import { usePhotoScanner } from '@/hooks/use-photo-scanner';
+import LiveMode from './components/LiveMode';
+
+// Extend window for speech accumulator
+declare global {
+  interface Window {
+    __speechAccumulator?: string;
+    __speechTimeout?: NodeJS.Timeout;
+  }
+}
 
 // Hardcoded test photo - the family photo provided by user
 const TEST_PHOTO_PATH = '/testphoto.jpg';
@@ -38,6 +57,15 @@ interface LiveMessage {
   content: string;
   timestamp: number;
   hasImage?: boolean;
+}
+
+interface BoundingBox {
+  label: string;
+  x: number;  // percentage 0-100
+  y: number;
+  w: number;
+  h: number;
+  color: string;
 }
 
 export default function PlaygroundPage() {
@@ -75,8 +103,6 @@ export default function PlaygroundPage() {
   const [liveMessages, setLiveMessages] = useState<LiveMessage[]>([]);
   const [liveInput, setLiveInput] = useState('');
   const [isLiveLoading, setIsLiveLoading] = useState(false);
-  const [cameraActive, setCameraActive] = useState(false);
-  const [currentFrame, setCurrentFrame] = useState<string | null>(null);
   
   // Gemini Live API state
   const [isLiveConnected, setIsLiveConnected] = useState(false);
@@ -86,15 +112,168 @@ export default function PlaygroundPage() {
   const [connectionError, setConnectionError] = useState<string | null>(null);
   const liveClientRef = useRef<GeminiLiveClient | null>(null);
   const videoFrameIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const speakingTimeoutRef = useRef<NodeJS.Timeout | null>(null); // Debounce speaking state
+  
+  // Conversation session tracking
+  const [currentSession, setCurrentSession] = useState<ConversationSession | null>(null);
+  const lastPhotoCaptureTimeRef = useRef<number>(0);
+  
+  // Story generation state
+  const [generatedStory, setGeneratedStory] = useState<GeneratedStory | null>(null);
+  const [isGeneratingStory, setIsGeneratingStory] = useState(false);
+  
+  // Toast state
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+  
+  // Bounding boxes state for visual overlay (from Gemini AI)
+  const [boundingBoxes, setBoundingBoxes] = useState<BoundingBox[]>([]);
+  
+  
+  // Accumulator for voice trigger detection (since transcription comes word-by-word)
+  const speechAccumulatorRef = useRef<string>('');
+  const speechTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const liveMessagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const photoRef = useRef<HTMLImageElement>(null);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
-  const streamRef = useRef<MediaStream | null>(null);
+  
+  // Custom hooks
+  const showToast = useCallback((message: string) => {
+    setToastMessage(message);
+    setTimeout(() => setToastMessage(null), 3000);
+  }, []);
+  
+  // Stable callback ref for frame capture to avoid re-renders
+  const onFrameCaptureRef = useRef<(frame: string) => void>(() => {});
+  onFrameCaptureRef.current = (frame: string) => {
+    // Send frame to Gemini Live if connected
+    if (liveClientRef.current?.connected) {
+      liveClientRef.current.sendVideoFrame(frame);
+    }
+  };
+  
+  const stableOnFrameCapture = useCallback((frame: string) => {
+    onFrameCaptureRef.current(frame);
+  }, []);
+  
+  const {
+    cameraActive,
+    videoReady,
+    currentFrame,
+    currentFrameRef,
+    videoRef,
+    canvasRef,
+    startCamera,
+    stopCamera,
+    captureFrame,
+  } = useCamera({
+    onFrameCapture: stableOnFrameCapture,
+  });
+  
+  const {
+    scannedPhotos,
+    isScanning,
+    photoDetected,
+    scanStatus,
+    capturePhoto,
+    startScanning,
+    stopScanning,
+  } = usePhotoScanner({
+    videoRef,
+    currentFrameRef,
+    onToast: showToast,
+  });
+  
+  // Track photo captures and associate with session
+  useEffect(() => {
+    if (scannedPhotos.length > 0 && currentSession) {
+      const latestPhoto = scannedPhotos[scannedPhotos.length - 1];
+      lastPhotoCaptureTimeRef.current = latestPhoto.timestamp;
+      
+      // Update session with new photo IDs
+      const photoIds = scannedPhotos.map(p => p.id);
+      const newPhotoIds = photoIds.filter(id => !currentSession.photoIds.includes(id));
+      if (newPhotoIds.length > 0) {
+        updateSession(currentSession.id, {
+          photoIds: [...currentSession.photoIds, ...newPhotoIds],
+        });
+        setCurrentSession(prev => prev ? {
+          ...prev,
+          photoIds: [...prev.photoIds, ...newPhotoIds],
+        } : null);
+      }
+    }
+  }, [scannedPhotos, currentSession]);
 
+  // Generate story from current session
+  const generateStory = useCallback(async () => {
+    if (!currentSession) {
+      showToast('No active conversation session');
+      return;
+    }
+    
+    const sessionMessages = getSessionMessages(currentSession.id);
+    console.log('Generating story for session:', currentSession.id);
+    console.log('Session messages:', sessionMessages.length, sessionMessages);
+    console.log('Session photoIds:', currentSession.photoIds);
+    
+    if (sessionMessages.length === 0) {
+      showToast('No messages in this session');
+      return;
+    }
+    
+    setIsGeneratingStory(true);
+    try {
+      // Get photos from session - try storage first, then fallback to scannedPhotos
+      const { getPhotosByIds } = await import('@/lib/storage/conversation-storage');
+      const storedPhotos = getPhotosByIds(currentSession.photoIds);
+      
+      // Use stored photos if available, otherwise use scannedPhotos (for Photo Mode compatibility)
+      const photosWithContext = storedPhotos.length > 0 
+        ? storedPhotos.map(photo => ({
+            id: photo.id,
+            imageData: photo.imageData,
+            timestamp: photo.timestamp,
+            context: photo.description,
+          }))
+        : scannedPhotos.map(photo => ({
+            id: photo.id,
+            imageData: photo.imageData,
+            timestamp: photo.timestamp,
+            context: photo.description,
+          }));
+      
+      // Filter to only photos in the session
+      const sessionPhotos = photosWithContext.filter(p => 
+        currentSession.photoIds.includes(p.id)
+      );
+      
+      const response = await fetch('/api/generate-story', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sessionId: currentSession.id,
+          messages: sessionMessages,
+          photos: sessionPhotos,
+        }),
+      });
+      
+      if (!response.ok) {
+        throw new Error('Failed to generate story');
+      }
+      
+      const data = await response.json();
+      setGeneratedStory(data.story);
+      showToast('✨ Story generated!');
+    } catch (error) {
+      console.error('Error generating story:', error);
+      showToast('Failed to generate story');
+    } finally {
+      setIsGeneratingStory(false);
+    }
+  }, [currentSession, scannedPhotos, showToast]);
+  
   // Load memory bank on mount
   useEffect(() => {
     const bank = loadMemoryBank();
@@ -152,57 +331,213 @@ export default function PlaygroundPage() {
         {
           // Using gemini-2.5-flash-native-audio-preview-12-2025 which requires AUDIO modality
           responseModalities: ['AUDIO'],  // AI will respond with voice!
-          systemInstruction: `You are Gemini, a helpful and friendly AI assistant. You can see through the user's camera and hear them speak.
+          systemInstruction: `You are Gemini, a helpful and friendly AI assistant helping preserve family memories. You can see through the user's camera and hear them speak.
+
+When you see a physical photograph being shown, include [PHOTO] in your response to save it.
 
 Your personality:
 - Warm, curious, and genuinely interested in what the user shows you
 - Respond naturally like a friend would, with appropriate emotion and enthusiasm
 - Be observant - notice and comment on details you see
-- Ask follow-up questions to learn more
+- Ask follow-up questions to learn more about the memories and people in photos
 
-When you see photos or images:
-- Describe what you see with interest and curiosity
-- Ask about the people, places, and moments captured
-- Help the user recall and share the stories behind the photos
-- Notice details like clothing, expressions, settings, and era
-
-Keep responses natural and conversational - like talking to a friend, not reading from a script.`,
+Keep responses natural, conversational, and BRIEF - like talking to a friend. Don't give long speeches.`,
         },
         {
           onConnect: () => {
             console.log('Connected to Gemini Live!');
             setIsLiveConnected(true);
             setIsConnecting(false);
-            setLiveMessages([{
+            
+            // Create new conversation session
+            const session: ConversationSession = {
+              id: `session-${Date.now()}`,
+              createdAt: Date.now(),
+              updatedAt: Date.now(),
+              photoIds: [],
+              messageIds: [],
+            };
+            setCurrentSession(session);
+            saveSession(session);
+            
+            const welcomeMessage: LiveMessage = {
               role: 'assistant',
               content: "🎙️ Connected! I can now see and hear you. Show me a photo and tell me about it - I'm listening!",
               timestamp: Date.now(),
-            }]);
+            };
+            setLiveMessages([welcomeMessage]);
+            
+            // Save welcome message to session
+            const liveMsg: LiveConversationMessage = {
+              id: `msg-${Date.now()}`,
+              sessionId: session.id,
+              role: 'assistant',
+              content: welcomeMessage.content,
+              timestamp: welcomeMessage.timestamp,
+              associatedPhotoIds: [],
+            };
+            saveMessage(liveMsg);
+            updateSession(session.id, { messageIds: [liveMsg.id] });
           },
           onDisconnect: () => {
             console.log('Disconnected from Gemini Live');
             setIsLiveConnected(false);
             setIsMicActive(false);
-            stopVideoFrameCapture();
           },
           onMessage: (message) => {
-            if (message.type === 'model') {
-              setLiveMessages(prev => [...prev, {
-                role: 'assistant',
+            const role = message.type === 'model' ? 'assistant' : 'user';
+            
+            // Check for AI-triggered photo capture and bounding boxes
+            if (message.type === 'model' && message.content) {
+              // Check if AI response contains [PHOTO] trigger
+              // Auto-capture disabled - use manual capture button instead
+              // if (message.content.includes('[PHOTO]')) {
+              //   console.log('📸 AI detected a photo!');
+              //   window.dispatchEvent(new CustomEvent('voiceCapturePhoto', { detail: 'AI detected photo' }));
+              // }
+              
+              // Parse and display bounding boxes
+              const boxPattern = /\[BOX:[^\]]+\]/g;
+              if (boxPattern.test(message.content)) {
+                // Dispatch event to update bounding boxes (avoid closure issues)
+                window.dispatchEvent(new CustomEvent('updateBoundingBoxes', { 
+                  detail: message.content 
+                }));
+              }
+              
+              // Remove markers from the displayed message
+              message.content = message.content
+                .replace('[PHOTO]', '')
+                .replace(/\[BOX:[^\]]+\]/g, '')
+                .trim();
+            }
+            
+            // Also check for voice-triggered photo capture (user speech)
+            // Accumulate words since transcription comes word-by-word
+            if (message.type === 'user' && message.content) {
+              // Add to accumulator (ensure space between words)
+              const currentAccumulator = window.__speechAccumulator || '';
+              const newContent = message.content.trim();
+              window.__speechAccumulator = currentAccumulator 
+                ? currentAccumulator + ' ' + newContent 
+                : newContent;
+              
+              // Clear previous timeout
+              if (window.__speechTimeout) {
+                clearTimeout(window.__speechTimeout);
+              }
+              
+              // Check for triggers in accumulated speech
+              // Normalize: remove extra spaces, punctuation for matching
+              const accumulated = window.__speechAccumulator.toLowerCase().replace(/[.,!?]/g, '').replace(/\s+/g, ' ');
+              
+              // More flexible triggers - partial matches OK
+              const triggers = [
+                "here's a photo", "heres a photo", "here is a photo", "here a photo",
+                "look at this photo", "look at this picture", "look at the photo",
+                "save this", "capture this", "scan this", "take this",
+                "take this photo", "this is a photo", "check this out",
+                "here's the photo", "heres the photo", "here the photo",
+                "look at this", "this photo", "the photo", "a photo",
+                "capture it", "save it", "scan it", "got it"
+              ];
+              
+              // Voice-triggered capture disabled - use manual capture button instead
+              // if (triggers.some(t => accumulated.includes(t))) {
+              //   console.log('📸 CAPTURE TRIGGERED! Heard:', window.__speechAccumulator);
+              //   window.dispatchEvent(new CustomEvent('voiceCapturePhoto', { detail: window.__speechAccumulator }));
+              //   window.__speechAccumulator = ''; // Reset after capture
+              // }
+              
+              // Reset accumulator after 2 seconds of silence
+              window.__speechTimeout = setTimeout(() => {
+                if (window.__speechAccumulator) {
+                  console.log('🎤 Full phrase:', window.__speechAccumulator);
+                }
+                window.__speechAccumulator = '';
+              }, 2000);
+            }
+            
+            setLiveMessages(prev => {
+              // Check if last message is from same role - always append if same role
+              // Use a longer window (10 seconds) for more natural message grouping
+              const lastMsg = prev[prev.length - 1];
+              const isRecent = lastMsg && (message.timestamp - lastMsg.timestamp) < 10000;
+              const isSameRole = lastMsg && lastMsg.role === role;
+              
+              if (isSameRole && isRecent && message.content) {
+                // Append to existing message - add space only if content doesn't end with space
+                const updated = [...prev];
+                const existingContent = lastMsg.content || '';
+                const newContent = message.content || '';
+                const separator = existingContent.endsWith(' ') || newContent.startsWith(' ') ? '' : ' ';
+                updated[updated.length - 1] = {
+                  ...lastMsg,
+                  content: existingContent + separator + newContent,
+                  timestamp: message.timestamp,
+                };
+                return updated;
+              } else if (message.content) {
+                // Create new message only if there's content
+                return [...prev, {
+                  role,
+                  content: message.content,
+                  timestamp: message.timestamp,
+                }];
+              }
+              // No change if no content
+              return prev;
+            });
+            
+            // Save message to session with photo associations (use ref to avoid stale closure)
+            if (currentSession && message.content) {
+              // Get current scanned photos from state (captured in closure)
+              const currentScannedPhotos = scannedPhotos;
+              const recentPhotoIds = currentScannedPhotos
+                .filter(p => message.timestamp - p.timestamp <= 5000)
+                .map(p => p.id);
+              
+              const associatedPhotoIds = getAssociatedPhotoIds(
+                message,
+                lastPhotoCaptureTimeRef.current,
+                recentPhotoIds
+              );
+              
+              const liveMsg: LiveConversationMessage = {
+                id: `msg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+                sessionId: currentSession.id,
+                role,
                 content: message.content,
                 timestamp: message.timestamp,
-              }]);
-            } else if (message.type === 'user') {
-              setLiveMessages(prev => [...prev, {
-                role: 'user',
-                content: message.content,
-                timestamp: message.timestamp,
-              }]);
+                associatedPhotoIds,
+                context: {
+                  cameraActive,
+                  photosVisible: currentScannedPhotos.map(p => p.id),
+                },
+              };
+              
+              saveMessage(liveMsg);
+              const updatedSession = getSession(currentSession.id);
+              if (updatedSession && !updatedSession.messageIds.includes(liveMsg.id)) {
+                updateSession(currentSession.id, {
+                  messageIds: [...updatedSession.messageIds, liveMsg.id],
+                });
+                setCurrentSession({
+                  ...updatedSession,
+                  messageIds: [...updatedSession.messageIds, liveMsg.id],
+                });
+              }
             }
           },
           onAudio: () => {
+            // Debounce speaking state - stay "speaking" as long as audio keeps coming
             setIsAISpeaking(true);
-            setTimeout(() => setIsAISpeaking(false), 500);
+            if (speakingTimeoutRef.current) {
+              clearTimeout(speakingTimeoutRef.current);
+            }
+            speakingTimeoutRef.current = setTimeout(() => {
+              setIsAISpeaking(false);
+            }, 1000); // Wait 1s after last audio chunk before showing "stopped speaking"
           },
           onError: (error) => {
             console.error('Live API error:', error);
@@ -234,7 +569,6 @@ Keep responses natural and conversational - like talking to a friend, not readin
     }
     setIsLiveConnected(false);
     setIsMicActive(false);
-    stopVideoFrameCapture();
     stopCamera();
   };
   
@@ -258,100 +592,32 @@ Keep responses natural and conversational - like talking to a friend, not readin
     }
     setIsMicActive(false);
   };
-  
-  // Camera functions for Live mode
-  const startCamera = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { 
-          facingMode: 'environment',
-          width: { ideal: 1280 },
-          height: { ideal: 720 },
-        },
-        audio: false,
-      });
-      
-      streamRef.current = stream;
-      setCameraActive(true);
-      
-      // Start sending video frames to Gemini
-      startVideoFrameCapture();
-    } catch (error) {
-      console.error('Failed to access camera:', error);
-      alert('Could not access camera. Please ensure you have granted camera permissions.');
-    }
-  };
 
-  // Connect video element to stream when it becomes available
-  useEffect(() => {
-    if (cameraActive && videoRef.current && streamRef.current) {
-      videoRef.current.srcObject = streamRef.current;
-    }
-  }, [cameraActive]);
+  // Trigger phrases for voice-activated capture (disabled - using scan mode instead)
+  const CAPTURE_TRIGGERS = [
+    "here's a photo",
+    "heres a photo",
+    "here is a photo",
+    "look at this photo",
+    "look at this picture",
+    "save this",
+    "capture this",
+    "scan this",
+    "take this photo",
+    "this is a photo",
+    "this photo",
+    "check this out",
+    "look at this",
+  ];
 
-  const stopCamera = () => {
-    stopVideoFrameCapture();
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
-      streamRef.current = null;
-    }
-    if (videoRef.current) {
-      videoRef.current.srcObject = null;
-    }
-    setCameraActive(false);
-    setCurrentFrame(null);
-  };
-
-  const captureFrame = useCallback(() => {
-    if (!videoRef.current || !canvasRef.current) return null;
-    
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext('2d');
-    
-    if (!ctx) return null;
-    
-    // Resize to smaller dimensions for faster transmission
-    const maxWidth = 640;
-    const scale = maxWidth / video.videoWidth;
-    canvas.width = maxWidth;
-    canvas.height = video.videoHeight * scale;
-    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-    
-    const frameData = canvas.toDataURL('image/jpeg', 0.6);
-    setCurrentFrame(frameData);
-    return frameData;
+  // Check if text contains a capture trigger phrase
+  const checkForCaptureTrigger = useCallback((text: string): boolean => {
+    const lowerText = text.toLowerCase();
+    return CAPTURE_TRIGGERS.some(trigger => lowerText.includes(trigger));
   }, []);
-  
-  // Send video frames periodically to Gemini
-  const startVideoFrameCapture = () => {
-    if (videoFrameIntervalRef.current) return;
-    
-    // Send frame immediately when starting
-    if (liveClientRef.current?.connected) {
-      const frame = captureFrame();
-      if (frame) {
-        console.log('Sending initial video frame');
-        liveClientRef.current.sendVideoFrame(frame);
-      }
-    }
-    
-    videoFrameIntervalRef.current = setInterval(() => {
-      if (liveClientRef.current?.connected && cameraActive) {
-        const frame = captureFrame();
-        if (frame) {
-          liveClientRef.current.sendVideoFrame(frame);
-        }
-      }
-    }, 500); // Send frame every 0.5 seconds for better responsiveness
-  };
-  
-  const stopVideoFrameCapture = () => {
-    if (videoFrameIntervalRef.current) {
-      clearInterval(videoFrameIntervalRef.current);
-      videoFrameIntervalRef.current = null;
-    }
-  };
+
+  // Listen for voice-triggered photo capture events
+  // Voice capture and bounding box events disabled - using scan mode instead
 
   // Send text message to Live API
   const sendLiveMessage = async (userMessage?: string) => {
@@ -762,13 +1028,7 @@ Keep responses natural and conversational - like talking to a friend, not readin
   };
 
   // Cleanup camera on unmount
-  useEffect(() => {
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach(track => track.stop());
-      }
-    };
-  }, []);
+  // Cleanup handled by useCamera hook
 
   return (
     <main className="min-h-screen p-4 md:p-8">
@@ -812,228 +1072,113 @@ Keep responses natural and conversational - like talking to a friend, not readin
 
         {/* LIVE MODE - Real Gemini Live API */}
         {mode === 'live' && (
-          <div className="grid md:grid-cols-2 gap-6">
-            {/* Camera & Controls Section */}
-            <div className="space-y-4">
-              {/* Connection Status Banner */}
-              {connectionError && (
-                <div className="p-3 bg-red-100 border border-red-200 rounded-lg text-red-700 text-sm">
-                  <strong>Connection Error:</strong> {connectionError}
-                </div>
-              )}
-              
-              {/* Camera View */}
-              <div className="bg-black rounded-xl overflow-hidden relative aspect-video">
-                {cameraActive ? (
-                  <>
-                    <video
-                      ref={videoRef}
-                      autoPlay
-                      playsInline
-                      muted
-                      className="w-full h-full object-cover"
-                    />
-                    <canvas ref={canvasRef} className="hidden" />
-                    
-                    {/* Status indicators */}
-                    <div className="absolute top-4 left-4 flex items-center gap-2">
-                      {isLiveConnected && (
-                        <div className="flex items-center gap-2 bg-green-500 text-white px-3 py-1 rounded-full text-sm">
-                          <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                          CONNECTED
-                        </div>
-                      )}
-                      {isMicActive && (
-                        <div className="flex items-center gap-2 bg-red-500 text-white px-3 py-1 rounded-full text-sm">
-                          <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                          🎤 MIC ON
-                        </div>
-                      )}
-                    </div>
-                    
-                    {/* AI Speaking indicator */}
-                    {isAISpeaking && (
-                      <div className="absolute bottom-4 right-4 bg-purple-500 text-white px-3 py-1 rounded-full text-sm flex items-center gap-2">
-                        <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
-                        AI Speaking...
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <div className="w-full h-full flex items-center justify-center">
-                    <div className="text-center p-8">
-                      <div className="w-20 h-20 mx-auto mb-4 rounded-full bg-white bg-opacity-10 flex items-center justify-center">
-                        <span className="text-4xl">🎙️</span>
-                      </div>
-                      <h3 className="text-white text-lg mb-2">Gemini Live</h3>
-                      <p className="text-white text-opacity-60 text-sm mb-4">
-                        Real-time voice & video conversation with AI
-                      </p>
-                    </div>
+          <>
+            <LiveMode 
+              onToast={showToast}
+              currentSession={currentSession}
+              onSessionCreated={(session) => {
+                setCurrentSession(session);
+              }}
+              onMessageSaved={(message) => {
+                if (currentSession) {
+                  const updatedSession = getSession(currentSession.id);
+                  if (updatedSession && !updatedSession.messageIds.includes(message.id)) {
+                    updateSession(currentSession.id, {
+                      messageIds: [...updatedSession.messageIds, message.id],
+                    });
+                    setCurrentSession({
+                      ...updatedSession,
+                      messageIds: [...updatedSession.messageIds, message.id],
+                    });
+                  }
+                }
+              }}
+              onPhotoCaptured={(photoId) => {
+                if (currentSession && !currentSession.photoIds.includes(photoId)) {
+                  updateSession(currentSession.id, {
+                    photoIds: [...currentSession.photoIds, photoId],
+                  });
+                  setCurrentSession(prev => prev ? {
+                    ...prev,
+                    photoIds: [...prev.photoIds, photoId],
+                  } : null);
+                  lastPhotoCaptureTimeRef.current = Date.now();
+                }
+              }}
+            />
+            
+            {/* Story Generation Section */}
+            {currentSession && (
+              <div className="mt-6 paper-texture rounded-xl shadow-lg p-6">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-xl font-semibold text-[var(--accent)] mb-1">
+                      Conversation Session
+                    </h3>
+                    <p className="text-sm text-[var(--foreground)] opacity-60">
+                      {getSessionMessages(currentSession.id).length} messages • {currentSession.photoIds.length} photos
+                    </p>
                   </div>
-                )}
-              </div>
-              
-              {/* Connection Controls */}
-              <div className="flex gap-3">
-                {!isLiveConnected ? (
                   <button
-                    onClick={connectToLiveAPI}
-                    disabled={isConnecting}
-                    className="flex-1 py-3 px-6 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-xl hover:opacity-90 transition-opacity font-medium disabled:opacity-50"
+                    onClick={generateStory}
+                    disabled={isGeneratingStory || getSessionMessages(currentSession.id).length === 0}
+                    className="px-6 py-3 bg-gradient-to-r from-[var(--accent)] to-[var(--accent-light)] text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 font-medium flex items-center gap-2"
                   >
-                    {isConnecting ? (
-                      <span className="flex items-center justify-center gap-2">
+                    {isGeneratingStory ? (
+                      <>
                         <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        Connecting...
-                      </span>
+                        Generating...
+                      </>
                     ) : (
-                      '🔌 Connect to Gemini Live'
+                      <>
+                        ✨ Generate Story
+                      </>
                     )}
                   </button>
-                ) : (
-                  <button
-                    onClick={disconnectFromLiveAPI}
-                    className="flex-1 py-3 px-6 bg-red-500 text-white rounded-xl hover:bg-red-600 transition-colors font-medium"
-                  >
-                    Disconnect
-                  </button>
-                )}
-              </div>
-              
-              {/* Camera & Mic Controls */}
-              {isLiveConnected && (
-                <div className="flex gap-3">
-                  {!cameraActive ? (
-                    <button
-                      onClick={startCamera}
-                      className="flex-1 py-3 px-6 bg-gradient-to-r from-green-500 to-emerald-500 text-white rounded-xl hover:opacity-90 transition-opacity font-medium"
-                    >
-                      📹 Start Camera
-                    </button>
-                  ) : (
-                    <button
-                      onClick={stopCamera}
-                      className="flex-1 py-3 px-6 bg-gray-500 text-white rounded-xl hover:bg-gray-600 transition-colors font-medium"
-                    >
-                      📹 Stop Camera
-                    </button>
-                  )}
-                  
-                  {!isMicActive ? (
-                    <button
-                      onClick={startMicrophone}
-                      className="flex-1 py-3 px-6 bg-gradient-to-r from-red-500 to-pink-500 text-white rounded-xl hover:opacity-90 transition-opacity font-medium"
-                    >
-                      🎤 Start Mic
-                    </button>
-                  ) : (
-                    <button
-                      onClick={stopMicrophone}
-                      className="flex-1 py-3 px-6 bg-gray-500 text-white rounded-xl hover:bg-gray-600 transition-colors font-medium"
-                    >
-                      🎤 Stop Mic
-                    </button>
-                  )}
                 </div>
-              )}
-              
-              {/* Tips */}
-              <div className="p-4 bg-purple-50 rounded-xl border border-purple-100">
-                <h4 className="font-medium text-purple-800 mb-2">🎙️ Gemini Live API</h4>
-                <ul className="text-sm text-purple-700 space-y-1">
-                  <li>• <strong>Connect</strong> to start a real-time session</li>
-                  <li>• <strong>Start Camera</strong> to show photos (sent every 1s)</li>
-                  <li>• <strong>Start Mic</strong> to talk - AI will respond with voice!</li>
-                  <li>• Point your camera at old photos and describe them</li>
-                  <li>• AI can see what you show and hear what you say</li>
-                </ul>
-              </div>
-            </div>
-
-            {/* Live Chat Section */}
-            <div className="paper-texture rounded-xl shadow-lg overflow-hidden flex flex-col" style={{ height: '600px' }}>
-              <div className={`px-4 py-3 ${isLiveConnected ? 'bg-gradient-to-r from-purple-500 to-indigo-500' : 'bg-gray-400'}`}>
-                <h2 className="font-medium text-white flex items-center gap-2">
-                  Live Conversation
-                  {isLiveConnected && <span className="w-2 h-2 bg-green-300 rounded-full animate-pulse" />}
-                </h2>
-                <p className="text-xs text-white text-opacity-80">
-                  {isLiveConnected 
-                    ? `Connected${cameraActive ? ' • Camera on' : ''}${isMicActive ? ' • Mic on' : ''}`
-                    : 'Not connected - click Connect to start'}
-                </p>
-              </div>
-
-              {/* Live Messages */}
-              <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar">
-                {liveMessages.length === 0 ? (
-                  <div className="h-full flex items-center justify-center text-center p-8">
-                    <div>
-                      <div className="text-4xl mb-4 opacity-30">🎙️</div>
-                      <p className="text-[var(--foreground)] opacity-50">
-                        {isLiveConnected 
-                          ? 'Connected! Start talking or show photos...'
-                          : 'Connect to Gemini Live to start a conversation'}
-                      </p>
+                
+                {/* Generated Story Display */}
+                {generatedStory && (
+                  <div className="mt-6 bg-white bg-opacity-50 rounded-lg p-6 border border-[var(--accent-light)] border-opacity-30">
+                    <div className="flex items-center justify-between mb-4">
+                      <h4 className="text-lg font-semibold text-[var(--accent)]">
+                        {generatedStory.title}
+                      </h4>
+                      <span className="text-xs text-[var(--foreground)] opacity-60">
+                        {generatedStory.wordCount} words • ~{generatedStory.estimatedDuration}s
+                      </span>
                     </div>
-                  </div>
-                ) : (
-                  <>
-                    {liveMessages.map((msg, index) => (
-                      <div
-                        key={index}
-                        className={`p-4 rounded-lg ${
-                          msg.role === 'assistant' ? 'bubble-ai mr-8' : 'bubble-user ml-8'
-                        }`}
-                      >
-                        <div className="flex items-center gap-2 mb-1">
-                          <p className="text-sm opacity-50">
-                            {msg.role === 'assistant' ? '🤖 Gemini' : '👤 You'}
-                          </p>
+                    <div 
+                      className="text-[var(--foreground)] leading-relaxed whitespace-pre-wrap"
+                      style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+                    >
+                      {generatedStory.narrative}
+                    </div>
+                    {generatedStory.associatedPhotoIds.length > 0 && (
+                      <div className="mt-4 pt-4 border-t border-[var(--accent-light)] border-opacity-20">
+                        <p className="text-sm text-[var(--foreground)] opacity-60 mb-2">
+                          Associated Photos: {generatedStory.associatedPhotoIds.length}
+                        </p>
+                        <div className="grid grid-cols-3 gap-2">
+                          {generatedStory.associatedPhotoIds.map(photoId => {
+                            const photo = scannedPhotos.find(p => p.id === photoId);
+                            return photo ? (
+                              <img
+                                key={photoId}
+                                src={photo.imageData}
+                                alt="Story photo"
+                                className="w-full h-24 object-cover rounded border border-[var(--accent-light)] border-opacity-30"
+                              />
+                            ) : null;
+                          })}
                         </div>
-                        <p className="whitespace-pre-wrap">{msg.content || '...'}</p>
-                      </div>
-                    ))}
-                    {isAISpeaking && (
-                      <div className="bubble-ai p-4 rounded-lg mr-8">
-                        <p className="text-sm opacity-50 mb-1">🤖 Gemini</p>
-                        <span className="flex gap-1 items-center">
-                          <span className="text-purple-500">🔊 Speaking...</span>
-                        </span>
                       </div>
                     )}
-                    <div ref={liveMessagesEndRef} />
-                  </>
+                  </div>
                 )}
               </div>
-
-              {/* Live Input Area - Text fallback */}
-              <div className="p-4 border-t border-[var(--accent-light)] border-opacity-20 bg-white bg-opacity-50">
-                <p className="text-xs text-gray-500 mb-2">
-                  {isMicActive ? '🎤 Listening... speak naturally!' : 'Type a message or enable mic for voice'}
-                </p>
-                <div className="flex gap-2">
-                  <textarea
-                    value={liveInput}
-                    onChange={(e) => setLiveInput(e.target.value)}
-                    onKeyDown={handleLiveKeyDown}
-                    placeholder={isLiveConnected ? "Type a message..." : "Connect first..."}
-                    disabled={!isLiveConnected}
-                    rows={2}
-                    className="flex-1 p-3 rounded-lg border border-[var(--accent-light)] border-opacity-30 bg-white focus:outline-none focus:border-purple-500 resize-none disabled:opacity-50"
-                  />
-                  <button
-                    onClick={handleLiveSubmit}
-                    disabled={!isLiveConnected || !liveInput.trim()}
-                    className="px-4 bg-gradient-to-r from-purple-500 to-indigo-500 text-white rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Send
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
+            )}
+          </>
         )}
 
         {/* PHOTO MODE (Original UI) */}
@@ -1057,6 +1202,7 @@ Keep responses natural and conversational - like talking to a friend, not readin
                         onChange={(e) => setNarrative(e.target.value)}
                         className="w-full min-h-[200px] bg-transparent focus:outline-none resize-none text-lg leading-relaxed"
                         style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+                        placeholder="Your story will appear here..."
                       />
                     </div>
                     
@@ -1437,6 +1583,16 @@ Keep responses natural and conversational - like talking to a friend, not readin
           <a href="/" className="text-[var(--accent)] hover:underline mt-2 inline-block">← Back to Home</a>
         </div>
       </div>
+      
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50 animate-fade-in">
+          <div className="bg-gray-900 text-white px-6 py-3 rounded-full shadow-lg flex items-center gap-2">
+            <span className="text-lg">{toastMessage.includes('📸') ? '' : '✓'}</span>
+            <span>{toastMessage}</span>
+          </div>
+        </div>
+      )}
     </main>
   );
 }

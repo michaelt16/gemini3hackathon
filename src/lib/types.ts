@@ -102,3 +102,39 @@ export interface SynthesisResponse {
   wordCount: number;
   estimatedDuration: number; // in seconds
 }
+
+// Conversation session - groups related conversations
+export interface ConversationSession {
+  id: string;
+  title?: string; // Auto-generated or user-provided
+  createdAt: number;
+  updatedAt: number;
+  photoIds: string[]; // Photos captured during this session
+  messageIds: string[]; // Messages in this session
+}
+
+// Enhanced conversation message with photo associations
+export interface LiveConversationMessage {
+  id: string;
+  sessionId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  timestamp: number;
+  associatedPhotoIds: string[]; // Photos visible/relevant during this message
+  context?: {
+    cameraActive?: boolean;
+    photosVisible?: string[]; // Photos in view when message was sent
+  };
+}
+
+// Story generated from conversation
+export interface GeneratedStory {
+  id: string;
+  sessionId: string;
+  title: string;
+  narrative: string;
+  associatedPhotoIds: string[];
+  wordCount: number;
+  estimatedDuration: number;
+  createdAt: number;
+}

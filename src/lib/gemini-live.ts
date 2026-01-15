@@ -41,6 +41,7 @@ export interface LiveCallbacks {
   onAudio?: (audioData: ArrayBuffer) => void;
   onError?: (error: Error) => void;
   onInterrupted?: () => void;
+  onTurnComplete?: () => void;
 }
 
 // WebSocket URL for Gemini Live API
@@ -57,6 +58,11 @@ export class GeminiLiveClient {
   private isConnected: boolean = false;
   private audioQueue: ArrayBuffer[] = [];
   private isPlaying: boolean = false;
+  private playbackContext: AudioContext | null = null;
+  private nextPlayTime: number = 0;
+  // Buffer for accumulating model responses until turn complete
+  private modelResponseBuffer: string = '';
+  private userResponseBuffer: string = '';
 
   constructor(apiKey: string, config: LiveConfig = {}, callbacks: LiveCallbacks = {}) {
     this.apiKey = apiKey;
@@ -143,7 +149,6 @@ export class GeminiLiveClient {
       },
     };
 
-    console.log('Sending setup message:', JSON.stringify(setupMessage, null, 2));
     this.ws.send(JSON.stringify(setupMessage));
   }
 
@@ -179,61 +184,67 @@ export class GeminiLiveClient {
           return;
         }
 
-        // Handle model turn
+        // Handle model turn - only process audio, text comes via transcription
         if (serverContent.modelTurn) {
           const modelTurn = serverContent.modelTurn as { parts?: Array<{ text?: string; inlineData?: { mimeType?: string; data?: string } }> };
           if (modelTurn.parts) {
             for (const part of modelTurn.parts) {
-              // Text response
-              if (part.text) {
-                this.callbacks.onMessage?.({
-                  type: 'model',
-                  content: part.text,
-                  timestamp: Date.now(),
-                });
-              }
-              
-              // Audio response
+              // Audio response - play it
               if (part.inlineData?.data) {
                 const audioData = this.base64ToArrayBuffer(part.inlineData.data);
                 this.audioQueue.push(audioData);
                 this.callbacks.onAudio?.(audioData);
                 this.playQueuedAudio();
               }
+              // Note: We skip part.text here because outputTranscription gives us 
+              // the complete text, avoiding fragmented messages
             }
           }
         }
 
-        // Handle turn complete
-        if (serverContent.turnComplete) {
-          console.log('Model turn complete');
-        }
-        
-        // Handle input transcription (what the user said)
+        // Handle input transcription (what the user said) - accumulate chunks
         if (serverContent.inputTranscription) {
           const transcription = serverContent.inputTranscription as { text?: string };
           if (transcription.text) {
-            console.log('User said:', transcription.text);
-            this.callbacks.onMessage?.({
-              type: 'user',
-              content: transcription.text,
-              timestamp: Date.now(),
-            });
+            // Accumulate user speech
+            this.userResponseBuffer += transcription.text;
           }
         }
         
-        // Handle output transcription (what the AI said)
+        // Handle output transcription (what the AI said) - accumulate chunks
         if (serverContent.outputTranscription) {
           const transcription = serverContent.outputTranscription as { text?: string };
           if (transcription.text) {
-            console.log('AI said:', transcription.text);
-            // Update the last assistant message with transcription
+            // Accumulate model response
+            this.modelResponseBuffer += transcription.text;
+          }
+        }
+        
+        // Handle turn complete - emit the complete messages
+        if (serverContent.turnComplete) {
+          // Emit user message if we have accumulated content
+          if (this.userResponseBuffer.trim()) {
+            console.log('User said (complete):', this.userResponseBuffer.trim());
             this.callbacks.onMessage?.({
-              type: 'model',
-              content: transcription.text,
+              type: 'user',
+              content: this.userResponseBuffer.trim(),
               timestamp: Date.now(),
             });
+            this.userResponseBuffer = '';
           }
+          
+          // Emit model message if we have accumulated content
+          if (this.modelResponseBuffer.trim()) {
+            console.log('AI said (complete):', this.modelResponseBuffer.trim());
+            this.callbacks.onMessage?.({
+              type: 'model',
+              content: this.modelResponseBuffer.trim(),
+              timestamp: Date.now(),
+            });
+            this.modelResponseBuffer = '';
+          }
+          
+          this.callbacks.onTurnComplete?.();
         }
       }
     } catch (error) {
@@ -379,15 +390,20 @@ export class GeminiLiveClient {
     }
   }
 
-  // Play audio from queue
-  private async playQueuedAudio(): Promise<void> {
-    if (this.isPlaying || this.audioQueue.length === 0) return;
-    
-    this.isPlaying = true;
+  // Play audio from queue - optimized for low latency
+  private playQueuedAudio(): void {
+    if (this.audioQueue.length === 0) return;
     
     try {
-      const playContext = new AudioContext({ sampleRate: 24000 });
+      // Reuse existing AudioContext for lower latency
+      if (!this.playbackContext || this.playbackContext.state === 'closed') {
+        this.playbackContext = new AudioContext({ sampleRate: 24000 });
+        this.nextPlayTime = this.playbackContext.currentTime;
+      }
       
+      const ctx = this.playbackContext;
+      
+      // Process all queued audio immediately
       while (this.audioQueue.length > 0) {
         const audioData = this.audioQueue.shift()!;
         
@@ -398,30 +414,31 @@ export class GeminiLiveClient {
           float32Data[i] = int16Data[i] / 32768;
         }
         
-        const audioBuffer = playContext.createBuffer(1, float32Data.length, 24000);
+        const audioBuffer = ctx.createBuffer(1, float32Data.length, 24000);
         audioBuffer.getChannelData(0).set(float32Data);
         
-        const source = playContext.createBufferSource();
+        const source = ctx.createBufferSource();
         source.buffer = audioBuffer;
-        source.connect(playContext.destination);
+        source.connect(ctx.destination);
         
-        await new Promise<void>((resolve) => {
-          source.onended = () => resolve();
-          source.start();
-        });
+        // Schedule immediately or after previous chunk
+        const startTime = Math.max(ctx.currentTime, this.nextPlayTime);
+        source.start(startTime);
+        this.nextPlayTime = startTime + audioBuffer.duration;
       }
-      
-      await playContext.close();
     } catch (error) {
       console.error('Error playing audio:', error);
     }
-    
-    this.isPlaying = false;
   }
 
   // Disconnect from Live API
   disconnect(): void {
     this.stopMicrophone();
+    
+    if (this.playbackContext && this.playbackContext.state !== 'closed') {
+      this.playbackContext.close();
+      this.playbackContext = null;
+    }
     
     if (this.ws) {
       this.ws.close();
@@ -430,6 +447,8 @@ export class GeminiLiveClient {
     
     this.isConnected = false;
     this.audioQueue = [];
+    this.modelResponseBuffer = '';
+    this.userResponseBuffer = '';
   }
 
   // Check connection status

@@ -11,6 +11,11 @@
   "dependencies": {
     "@google/genai": "^1.35.0",
     "@google/generative-ai": "^0.24.1",
+    "@mediapipe/camera_utils": "^0.3.1675466862",
+    "@mediapipe/drawing_utils": "^0.3.1675466124",
+    "@mediapipe/selfie_segmentation": "^0.1.1675465747",
+    "@tensorflow-models/coco-ssd": "^2.2.3",
+    "@tensorflow/tfjs": "^4.22.0",
     "face-api.js": "^0.22.2",
     "next": "16.1.1",
     "react": "19.2.3",

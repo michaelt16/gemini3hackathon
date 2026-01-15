@@ -35,7 +35,28 @@ export interface DetectedFace {
 }
 
 // Detect all faces in an image and get their embeddings
-export async function detectFaces(imageElement: HTMLImageElement): Promise<DetectedFace[]> {
+export async function detectFaces(imageElement: HTMLImageElement | HTMLVideoElement | HTMLCanvasElement | null): Promise<DetectedFace[]> {
+  if (!imageElement) {
+    console.warn('detectFaces: No image element provided');
+    return [];
+  }
+  
+  // Validate the element is a valid media type
+  if (!(imageElement instanceof HTMLImageElement) && 
+      !(imageElement instanceof HTMLVideoElement) && 
+      !(imageElement instanceof HTMLCanvasElement)) {
+    console.warn('detectFaces: Invalid element type', imageElement);
+    return [];
+  }
+  
+  // For images, ensure they're loaded
+  if (imageElement instanceof HTMLImageElement) {
+    if (!imageElement.complete || imageElement.naturalWidth === 0) {
+      console.warn('detectFaces: Image not fully loaded');
+      return [];
+    }
+  }
+  
   if (!modelsLoaded) {
     await loadFaceModels();
   }
@@ -47,21 +68,26 @@ export async function detectFaces(imageElement: HTMLImageElement): Promise<Detec
     maxResults: 10,      // Allow more faces
   });
   
-  const detections = await faceapi
-    .detectAllFaces(imageElement, options)
-    .withFaceLandmarks()
-    .withFaceDescriptors();
+  try {
+    const detections = await faceapi
+      .detectAllFaces(imageElement, options)
+      .withFaceLandmarks()
+      .withFaceDescriptors();
   
-  return detections.map(detection => ({
-    box: {
-      x: detection.detection.box.x,
-      y: detection.detection.box.y,
-      width: detection.detection.box.width,
-      height: detection.detection.box.height,
-    },
-    descriptor: detection.descriptor,
-    confidence: detection.detection.score,
-  }));
+    return detections.map(detection => ({
+      box: {
+        x: detection.detection.box.x,
+        y: detection.detection.box.y,
+        width: detection.detection.box.width,
+        height: detection.detection.box.height,
+      },
+      descriptor: detection.descriptor,
+      confidence: detection.detection.score,
+    }));
+  } catch (error) {
+    console.error('Face detection failed:', error);
+    return [];
+  }
 }
 
 // Calculate Euclidean distance between two face descriptors

@@ -72,3 +72,26 @@ export async function startConversation(photoAnalysis: string) {
   const response = result.response;
   return response.text();
 }
+
+// Ask a custom question about an image
+export async function askAboutImage(
+  imageBase64: string,
+  prompt: string,
+  mimeType: string = 'image/jpeg'
+) {
+  const genAI = getGeminiClient();
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+
+  const result = await model.generateContent([
+    {
+      inlineData: {
+        data: imageBase64,
+        mimeType: mimeType,
+      },
+    },
+    prompt,
+  ]);
+
+  const response = result.response;
+  return response.text();
+}
