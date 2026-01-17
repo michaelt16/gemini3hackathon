@@ -138,3 +138,25 @@ export interface GeneratedStory {
   estimatedDuration: number;
   createdAt: number;
 }
+
+// Voice profile for TTS
+export interface VoiceProfile {
+  id: string;
+  name: string;
+  createdAt: number;
+}
+
+// Animated story (photo + animation + narration)
+export interface AnimatedStory {
+  id: string;
+  photoId: string;
+  storyId?: string;
+  animatedVideoUrl: string;
+  audioUrl: string;
+  audioBase64?: string;
+  duration: number;
+  voiceId: string;
+  hasMinors: boolean;
+  createdAt: number;
+  status: 'completed' | 'processing' | 'failed';
+}
