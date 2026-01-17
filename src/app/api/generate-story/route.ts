@@ -95,9 +95,9 @@ export async function POST(request: NextRequest) {
       .join('\n');
 
     // Build the prompt
-    const prompt = `You are creating a story from a conversation about family photos. The story MUST be based on the questions asked and the photos shown during the conversation.
+    const prompt = `You are creating a narration story from a conversation about family photos. This story will be narrated over photos in a photo album, so it should be a pure narrative - NOT a transcript of the conversation.
 
-CONVERSATION HISTORY (Questions and Answers):
+CONVERSATION HISTORY (for context only - extract the story, don't include the Q&A format):
 ${conversationText}
 
 PHOTOS TAKEN AND DISCUSSED:
@@ -106,26 +106,30 @@ ${photoContexts || 'No photos were captured during this conversation'}
 PHOTO ASSOCIATIONS (Which photos relate to which parts of the conversation):
 ${photoAssociations || 'No specific photo associations mentioned'}
 
-IMPORTANT: Create a narrative story that:
-1. **Directly incorporates the questions asked** - If the AI asked "Who is this?" and the user answered, include that exchange in the story
-2. **References the specific photos taken** - When a photo was discussed, reference it naturally (e.g., "In the photo, we can see...", "The image shows...")
-3. **Weaves together the conversation naturally** - Don't just list Q&A, create a flowing narrative
-4. **Maintains chronological flow** - Follow the order of the conversation and when photos were taken
-5. **Captures the emotional tone** - Preserve the warmth, curiosity, and personality from the conversation
-6. **Preserves important details** - Include names, places, dates, events, and relationships mentioned
-7. **Tells a complete story** - Not a transcript, but a cohesive narrative that someone reading it would understand the memory being preserved
+CRITICAL INSTRUCTIONS:
+1. **Write as a pure narration** - This is a story being told, NOT a conversation transcript. Remove all references to "AI", "I asked", "the user said", "conversation", etc.
+2. **First-person perspective** - Write as if the person is telling their own story (e.g., "The old photo album lay open on my lap...", "I decided to share one...")
+3. **Extract the story from the conversation** - Take the information shared (names, places, dates, memories, emotions) and weave it into a flowing narrative
+4. **Reference photos naturally** - When mentioning photos, do it naturally (e.g., "The image showed...", "In the photo, we can see...", "The picture captured...")
+5. **Maintain chronological flow** - Follow the order of when things were discussed
+6. **Preserve all important details** - Include names, places, dates, events, relationships, and emotions mentioned
+7. **Create emotional depth** - Capture the warmth, nostalgia, and significance of the memory
+8. **Tell a complete story** - Answer: What was happening? Who was there? Why was this moment important? What makes this memory special?
 
-The story should feel like someone is telling the story of these photos based on the conversation that happened. It should answer: What was happening? Who was there? Why was this moment important? What did we learn from the questions asked?
+The story should feel like someone is narrating their memory while looking through a photo album. It should be personal, warm, and complete.
 
 Format requirements:
 - 200-500 words
-- Write in past tense or present tense (choose what feels natural)
-- Use descriptive language
-- Include transitions between topics
-- Reference photos naturally when relevant
-- End with a meaningful conclusion
+- Write in first-person past tense (e.g., "I was...", "We were...", "It was...")
+- Use descriptive, evocative language
+- Include sensory details when mentioned (sounds, smells, feelings)
+- Flow naturally from one thought to the next
+- End with a meaningful reflection or conclusion about why this memory matters
 
-Generate the story now:`;
+Example style:
+"The old photo album lay open on my lap, the brittle pages whispering with each turn. I decided to share one, a snapshot from what felt like another lifetime. The image displayed a moment from our family trip - the four of us at the beach, squinting in the bright Indonesian sun..."
+
+Generate the pure narration story now (NO conversation format, NO AI references, just the story):`;
 
     // Generate story using Gemini
     const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });

@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect, useCallback } from 'react';
-import { PhotoAnalysis, ConversationMessage, ChatResponse, SynthesisResponse, ConversationSession, LiveConversationMessage, GeneratedStory } from '@/lib/types';
+import { PhotoAnalysis, ConversationMessage, ChatResponse, SynthesisResponse, ConversationSession, LiveConversationMessage, GeneratedStory, VoiceProfile, AnimatedStory } from '@/lib/types';
 import { 
   saveSession, 
   updateSession, 
@@ -9,6 +9,9 @@ import {
   getAssociatedPhotoIds,
   getSession,
   getSessionMessages,
+  loadPhotos,
+  getPhotosByIds,
+  type StoredPhoto,
 } from '@/lib/storage/conversation-storage';
 import { 
   loadFaceModels, 
@@ -122,6 +125,18 @@ export default function PlaygroundPage() {
   const [generatedStory, setGeneratedStory] = useState<GeneratedStory | null>(null);
   const [isGeneratingStory, setIsGeneratingStory] = useState(false);
   
+  // Voice cloning state
+  const [voiceProfile, setVoiceProfile] = useState<VoiceProfile | null>(null);
+  const [isCloningVoice, setIsCloningVoice] = useState(false);
+  const [voiceSampleFile, setVoiceSampleFile] = useState<File | null>(null);
+  const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  
+  // Animated story state
+  const [animatedStory, setAnimatedStory] = useState<AnimatedStory | null>(null);
+  const [isCreatingAnimatedStory, setIsCreatingAnimatedStory] = useState(false);
+  
   // Toast state
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   
@@ -172,7 +187,7 @@ export default function PlaygroundPage() {
   });
   
   const {
-    scannedPhotos,
+    scannedPhotos: scannedPhotosFromHook,
     isScanning,
     photoDetected,
     scanStatus,
@@ -184,15 +199,55 @@ export default function PlaygroundPage() {
     currentFrameRef,
     onToast: showToast,
   });
+
+  // Load photos from storage for current session (for Live Mode)
+  const [storedPhotos, setStoredPhotos] = useState<StoredPhoto[]>([]);
+  
+  // Convert StoredPhoto to ScannedPhoto format
+  const scannedPhotosFromStorage = storedPhotos.map(photo => ({
+    id: photo.id,
+    imageData: photo.imageData,
+    timestamp: photo.timestamp,
+    description: photo.description,
+  }));
+
+  // Use stored photos in Live Mode, hook photos in Photo Mode
+  const scannedPhotos = mode === 'live' ? scannedPhotosFromStorage : scannedPhotosFromHook;
+  
+  // Load photos from storage when session changes (Live Mode)
+  useEffect(() => {
+    if (mode === 'live' && currentSession) {
+      const photos = getPhotosByIds(currentSession.photoIds);
+      setStoredPhotos(photos);
+    } else if (mode === 'live' && !currentSession) {
+      setStoredPhotos([]);
+    }
+  }, [currentSession, mode]);
+  
+  // Also listen for new photos being saved (refresh when photos are added)
+  useEffect(() => {
+    if (mode === 'live' && currentSession) {
+      const checkPhotos = () => {
+        const photos = getPhotosByIds(currentSession.photoIds);
+        if (photos.length !== storedPhotos.length) {
+          setStoredPhotos(photos);
+        }
+      };
+      
+      // Check periodically for new photos
+      const interval = setInterval(checkPhotos, 1000);
+      return () => clearInterval(interval);
+    }
+  }, [currentSession, mode, storedPhotos.length]);
   
   // Track photo captures and associate with session
   useEffect(() => {
-    if (scannedPhotos.length > 0 && currentSession) {
-      const latestPhoto = scannedPhotos[scannedPhotos.length - 1];
+    if (scannedPhotosFromHook.length > 0 && currentSession) {
+      const latestPhoto = scannedPhotosFromHook[scannedPhotosFromHook.length - 1];
       lastPhotoCaptureTimeRef.current = latestPhoto.timestamp;
       
       // Update session with new photo IDs
-      const photoIds = scannedPhotos.map(p => p.id);
+      const photoIds = scannedPhotosFromHook.map(p => p.id);
       const newPhotoIds = photoIds.filter(id => !currentSession.photoIds.includes(id));
       if (newPhotoIds.length > 0) {
         updateSession(currentSession.id, {
@@ -204,7 +259,7 @@ export default function PlaygroundPage() {
         } : null);
       }
     }
-  }, [scannedPhotos, currentSession]);
+  }, [scannedPhotosFromHook, currentSession]);
 
   // Generate story from current session
   const generateStory = useCallback(async () => {
@@ -339,9 +394,22 @@ Your personality:
 - Warm, curious, and genuinely interested in what the user shows you
 - Respond naturally like a friend would, with appropriate emotion and enthusiasm
 - Be observant - notice and comment on details you see
-- Ask follow-up questions to learn more about the memories and people in photos
+- BE PROACTIVE - Always ask thoughtful follow-up questions to build the story
 
-Keep responses natural, conversational, and BRIEF - like talking to a friend. Don't give long speeches.`,
+CRITICAL: After analyzing a photo or receiving a response:
+1. **Always ask a follow-up question** - Don't just acknowledge, dig deeper
+2. **When conversation dies down** - If the user gives a short answer or there's a pause, ask another question to keep building the story
+3. **Build on what they share** - Reference details they mentioned and ask about related memories
+4. **Ask about emotions and significance** - "What made that moment special?", "How did that feel?", "Why do you think this photo matters?"
+5. **Ask about context** - Who else was there? What happened before/after? What was the occasion?
+6. **Keep the conversation flowing** - If they answer briefly, ask a more specific question to get more detail
+
+Question strategy:
+- After analyzing: "Wow, what a great photo! [observation]. [Ask specific question about what you see]"
+- After their answer: "That's wonderful! [Acknowledge their answer]. [Ask deeper question to build the story]"
+- When quiet: "I'm curious - [ask about a detail or emotion related to what they shared]"
+
+Keep responses natural, conversational, and BRIEF (2-3 sentences max), but ALWAYS end with a question to keep the story building.`,
         },
         {
           onConnect: () => {
@@ -978,6 +1046,224 @@ Keep responses natural, conversational, and BRIEF - like talking to a friend. Do
     }
   };
 
+  // Voice cloning functions
+  const startVoiceRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        const audioFile = new File([audioBlob], 'voice-sample.webm', { type: 'audio/webm' });
+        setVoiceSampleFile(audioFile);
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecordingVoice(true);
+      showToast('🎤 Recording... Speak for 30-60 seconds');
+    } catch (error) {
+      console.error('Failed to start recording:', error);
+      showToast('Failed to access microphone');
+    }
+  };
+
+  const stopVoiceRecording = () => {
+    if (mediaRecorderRef.current && isRecordingVoice) {
+      mediaRecorderRef.current.stop();
+      setIsRecordingVoice(false);
+      showToast('✅ Recording complete');
+    }
+  };
+
+  const cloneVoice = async () => {
+    if (!voiceSampleFile) {
+      showToast('Please record a voice sample first');
+      return;
+    }
+
+    setIsCloningVoice(true);
+    try {
+      const formData = new FormData();
+      formData.append('audioFile', voiceSampleFile);
+      formData.append('voiceName', 'My Voice');
+
+      const response = await fetch('/api/voice/clone', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to clone voice');
+      }
+
+      const data = await response.json();
+      setVoiceProfile(data.voiceProfile);
+      showToast('✅ Voice cloned successfully!');
+    } catch (error) {
+      console.error('Voice cloning error:', error);
+      showToast('Failed to clone voice. Make sure ELEVENLABS_API_KEY is set.');
+    } finally {
+      setIsCloningVoice(false);
+    }
+  };
+
+  // Process scanned photos with Nano Banana (crop and enhance)
+  const [processingPhotoId, setProcessingPhotoId] = useState<string | null>(null);
+  const [processedPhotos, setProcessedPhotos] = useState<Map<string, string>>(new Map());
+
+  const processScannedPhoto = async (photoId: string) => {
+    const photo = scannedPhotos.find(p => p.id === photoId);
+    if (!photo) {
+      showToast('Photo not found');
+      return;
+    }
+
+    // Skip if already processed
+    if (processedPhotos.has(photoId)) {
+      showToast('Photo already processed');
+      return;
+    }
+
+    setProcessingPhotoId(photoId);
+    try {
+      showToast('🖼️ Processing photo with Nano Banana...');
+      
+      const response = await fetch('/api/process-photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          imageBase64: photo.imageData,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        throw new Error(error.details || 'Failed to process photo');
+      }
+
+      const data = await response.json();
+      
+      // Store the processed image
+      setProcessedPhotos(prev => new Map(prev).set(photoId, data.processedImage));
+      
+      showToast('✅ Photo processed and enhanced!');
+    } catch (error) {
+      console.error('Photo processing error:', error);
+      showToast(`Failed to process: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setProcessingPhotoId(null);
+    }
+  };
+
+  // Animate scanned photo directly with VEO 3 (no TTS)
+  const [animatingPhotoId, setAnimatingPhotoId] = useState<string | null>(null);
+  const [animatedVideos, setAnimatedVideos] = useState<Map<string, { videoUrl?: string; videoBase64?: string; duration: number; status: string }>>(new Map());
+  const [photosWithMinors, setPhotosWithMinors] = useState<Set<string>>(new Set());
+
+  const animateScannedPhoto = async (photoId: string) => {
+    const photo = scannedPhotos.find(p => p.id === photoId);
+    if (!photo) {
+      showToast('Photo not found');
+      return;
+    }
+
+    // Use processed photo if available, otherwise use original
+    const imageToAnimate = processedPhotos.get(photoId) || photo.imageData;
+
+    setAnimatingPhotoId(photoId);
+    try {
+      showToast('🎬 Generating video with VEO 3...');
+      
+      const response = await fetch('/api/animate-photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          photoUrl: imageToAnimate,
+          storyText: 'Create a subtle, minimal animation of this photo. Very slow, gentle movement. Focus on environmental elements like water, leaves, clouds. Like a Live Photo - barely noticeable motion.',
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.json();
+        
+        // Check if this is a minors detection error
+        if (error.reason === 'minors_detected') {
+          showToast('⚠️ Cannot animate: Photo contains minors (VEO 3 policy restriction)');
+          setPhotosWithMinors(prev => new Set(prev).add(photoId));
+          setAnimatingPhotoId(null);
+          return;
+        }
+        
+        throw new Error(error.message || error.details || 'Failed to animate photo');
+      }
+
+      const data = await response.json();
+      
+      setAnimatedVideos(prev => new Map(prev).set(photoId, {
+        videoUrl: data.animatedVideoUrl,
+        videoBase64: data.videoBase64,
+        duration: data.duration,
+        status: data.status,
+      }));
+      
+      showToast('✅ Video generated successfully!');
+    } catch (error) {
+      console.error('Animation error:', error);
+      showToast(`Failed to animate: ${error instanceof Error ? error.message : 'Unknown error'}`);
+    } finally {
+      setAnimatingPhotoId(null);
+    }
+  };
+
+  const createAnimatedStory = async () => {
+    if (!voiceProfile) {
+      showToast('Please clone your voice first');
+      return;
+    }
+
+    if (!narrative || !photoBase64) {
+      showToast('Story and photo are required');
+      return;
+    }
+
+    setIsCreatingAnimatedStory(true);
+    try {
+      const response = await fetch('/api/create-animated-story', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          photoId: 'current-photo',
+          storyId: generatedStory?.id,
+          storyText: narrative,
+          voiceId: voiceProfile.id,
+          photoUrl: photoBase64,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to create animated story');
+      }
+
+      const data = await response.json();
+      setAnimatedStory(data.animatedStory);
+      showToast('✨ Animated story created!');
+    } catch (error) {
+      console.error('Create animated story error:', error);
+      showToast('Failed to create animated story');
+    } finally {
+      setIsCreatingAnimatedStory(false);
+    }
+  };
+
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -1107,6 +1393,132 @@ Keep responses natural, conversational, and BRIEF - like talking to a friend. Do
               }}
             />
             
+            {/* Scanned Photos Section with VEO 3 Animation */}
+            {scannedPhotos.length > 0 && (
+              <div className="mt-6 paper-texture rounded-xl shadow-lg p-6">
+                <h3 className="text-xl font-semibold text-[var(--accent)] mb-4">
+                  📷 Scanned Photos ({scannedPhotos.length})
+                </h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                  {scannedPhotos.map((photo) => {
+                    const animatedVideo = animatedVideos.get(photo.id);
+                    const isAnimating = animatingPhotoId === photo.id;
+                    const isProcessing = processingPhotoId === photo.id;
+                    const processedImage = processedPhotos.get(photo.id);
+                    const displayImage = processedImage || photo.imageData;
+                    const hasMinors = photosWithMinors.has(photo.id);
+                    
+                    return (
+                      <div key={photo.id} className="relative">
+                        {/* Show processed image if available, otherwise original */}
+                        <img
+                          src={displayImage}
+                          alt="Scanned photo"
+                          className={`w-full h-32 object-cover rounded-lg border-2 ${
+                            hasMinors
+                              ? 'border-red-400 opacity-75'
+                              : processedImage 
+                              ? 'border-green-400' 
+                              : 'border-[var(--accent-light)] border-opacity-30'
+                          }`}
+                        />
+                        {processedImage && !hasMinors && (
+                          <div className="absolute top-1 right-1 bg-green-500 text-white text-xs px-1 rounded">
+                            ✨ Enhanced
+                          </div>
+                        )}
+                        {hasMinors && (
+                          <div className="absolute top-1 right-1 bg-red-500 text-white text-xs px-1 rounded">
+                            ⚠️ Minors
+                          </div>
+                        )}
+                        
+                        {/* Action buttons */}
+                        <div className="mt-2 space-y-1">
+                          {/* Process button - only show if not yet processed */}
+                          {!processedImage && (
+                            <button
+                              onClick={() => processScannedPhoto(photo.id)}
+                              disabled={isProcessing}
+                              className="w-full px-3 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition-all disabled:opacity-50 text-xs font-medium flex items-center justify-center gap-2"
+                            >
+                              {isProcessing ? (
+                                <>
+                                  <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                  Processing...
+                                </>
+                              ) : (
+                                <>
+                                  🖼️ Crop & Enhance
+                                </>
+                              )}
+                            </button>
+                          )}
+                          
+                          {/* Animate button */}
+                          <button
+                            onClick={() => animateScannedPhoto(photo.id)}
+                            disabled={isAnimating || hasMinors}
+                            className={`w-full px-3 py-2 text-white rounded-lg transition-all disabled:opacity-50 text-xs font-medium flex items-center justify-center gap-2 ${
+                              hasMinors
+                                ? 'bg-gray-400 cursor-not-allowed'
+                                : 'bg-[var(--accent)] hover:bg-opacity-90'
+                            }`}
+                            title={hasMinors ? 'Cannot animate: Photo contains minors (VEO 3 policy restriction)' : ''}
+                          >
+                            {isAnimating ? (
+                              <>
+                                <span className="w-3 h-3 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                                Animating...
+                              </>
+                            ) : hasMinors ? (
+                              <>
+                                ⚠️ Cannot Animate (Minors)
+                              </>
+                            ) : (
+                              <>
+                                🎬 Animate with VEO 3
+                              </>
+                            )}
+                          </button>
+                        </div>
+                        
+                        {/* Animated video result */}
+                        {animatedVideo && (
+                          <div className="mt-2 p-2 bg-green-50 rounded border border-green-200">
+                            <p className="text-xs text-green-700 mb-1">✅ Video ready ({animatedVideo.duration}s)</p>
+                            {animatedVideo.videoBase64 && (
+                              <video
+                                controls
+                                className="w-full rounded"
+                                src={`data:video/mp4;base64,${animatedVideo.videoBase64}`}
+                              />
+                            )}
+                            {animatedVideo.videoUrl && !animatedVideo.videoBase64 && (
+                              <video
+                                controls
+                                className="w-full rounded"
+                                src={animatedVideo.videoUrl}
+                              />
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+            
+            {/* Show message if no photos scanned yet */}
+            {scannedPhotos.length === 0 && (
+              <div className="mt-6 paper-texture rounded-xl shadow-lg p-6 text-center">
+                <p className="text-[var(--foreground)] opacity-60">
+                  📷 No photos scanned yet. Use the camera to scan photos, then you can animate them with VEO 3.
+                </p>
+              </div>
+            )}
+
             {/* Story Generation Section */}
             {currentSession && (
               <div className="mt-6 paper-texture rounded-xl shadow-lg p-6">
@@ -1206,6 +1618,109 @@ Keep responses natural, conversational, and BRIEF - like talking to a friend. Do
                       />
                     </div>
                     
+                    {/* Voice Cloning Section */}
+                    <div className="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                      <h3 className="text-sm font-semibold text-blue-900 mb-2">
+                        🎤 Voice for Narration
+                      </h3>
+                      {!voiceProfile ? (
+                        <div className="space-y-2">
+                          <div className="flex gap-2">
+                            <button
+                              onClick={isRecordingVoice ? stopVoiceRecording : startVoiceRecording}
+                              className="flex-1 py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 text-sm"
+                            >
+                              {isRecordingVoice ? '⏹️ Stop Recording' : '🎤 Record Voice (ElevenLabs)'}
+                            </button>
+                            {voiceSampleFile && (
+                              <button
+                                onClick={cloneVoice}
+                                disabled={isCloningVoice}
+                                className="flex-1 py-2 px-4 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:opacity-50 text-sm"
+                              >
+                                {isCloningVoice ? 'Cloning...' : '✨ Clone Voice'}
+                              </button>
+                            )}
+                          </div>
+                          <div className="pt-2 border-t border-blue-200">
+                            <button
+                              onClick={() => {
+                                // Use Google TTS (free, no cloning needed)
+                                setVoiceProfile({ id: 'google', name: 'Google TTS (Free)', createdAt: Date.now() });
+                                showToast('✅ Using Google TTS (free pre-built voice)');
+                              }}
+                              className="w-full py-2 px-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 text-sm"
+                            >
+                              🆓 Use Google TTS (Free - No Cloning)
+                            </button>
+                            <p className="text-xs text-purple-600 mt-1">
+                              Uses Google's natural pre-built voices (free tier: 4M chars/month)
+                            </p>
+                          </div>
+                          {voiceSampleFile && (
+                            <p className="text-xs text-blue-700">
+                              ✅ Voice sample ready ({Math.round(voiceSampleFile.size / 1024)}KB)
+                            </p>
+                          )}
+                          <p className="text-xs text-blue-600">
+                            Option 1: Record 30-60s for ElevenLabs cloning ($5/mo) • Option 2: Use Google TTS (free)
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between">
+                          <p className="text-sm text-blue-900">
+                            ✅ Voice: <strong>{voiceProfile.name}</strong>
+                            {voiceProfile.id === 'google' && (
+                              <span className="ml-2 text-xs text-purple-600">(Free)</span>
+                            )}
+                          </p>
+                          <button
+                            onClick={() => setVoiceProfile(null)}
+                            className="text-xs text-blue-600 hover:underline"
+                          >
+                            Reset
+                          </button>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Animated Story Section */}
+                    {voiceProfile && (
+                      <div className="mb-4 p-4 bg-purple-50 rounded-lg border border-purple-200">
+                        <h3 className="text-sm font-semibold text-purple-900 mb-2">
+                          🎬 Create Animated Story
+                        </h3>
+                        <button
+                          onClick={createAnimatedStory}
+                          disabled={isCreatingAnimatedStory || !narrative}
+                          className="w-full py-2 px-4 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-50 text-sm font-medium"
+                        >
+                          {isCreatingAnimatedStory ? (
+                            <>
+                              <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin inline-block mr-2" />
+                              Creating animated story...
+                            </>
+                          ) : (
+                            '✨ Create Animated Story with Voice'
+                          )}
+                        </button>
+                        {animatedStory && (
+                          <div className="mt-3 p-3 bg-white rounded border border-purple-200">
+                            <p className="text-xs text-purple-700 mb-2">
+                              ✅ Animated story created!
+                            </p>
+                            {animatedStory.audioUrl && (
+                              <audio controls className="w-full mb-2" src={animatedStory.audioUrl} />
+                            )}
+                            <p className="text-xs text-gray-600">
+                              Duration: {animatedStory.duration}s • 
+                              {animatedStory.hasMinors ? ' ⚠️ Minors detected (environment only)' : ' ✅ Full animation'}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div className="flex gap-3">
                       <button
                         onClick={() => setPhase('conversation')}
