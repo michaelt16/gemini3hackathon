@@ -997,4 +997,373 @@ ORDER BY p.taken_at ASC;  -- Default: chronological, user can reorder
 
 ---
 
+## 🔮 Beyond MVP: Future Considerations
+
+> **Note**: These are edge cases, blind spots, and enhancements identified during planning. They are **NOT** part of the hackathon MVP scope but should be considered for post-MVP development.
+
+### Critical Edge Cases
+
+#### 1. Duplicate Photo Detection
+**Problem**: Same photo scanned multiple times, or same photo appears in multiple albums.
+
+**Impact**: Data bloat, confusion, wasted storage.
+
+**MVP Workaround**: Basic image hashing comparison before storage.
+
+**Future Solution**: Advanced similarity detection, duplicate grouping UI, "already scanned" warnings.
+
+---
+
+#### 2. Conversation Conflicts
+**Problem**: Two people tell different stories about the same photo.
+
+**Impact**: Which story is "correct"? How to handle conflicting narratives?
+
+**MVP Workaround**: Store both conversations, mark as "multiple perspectives", let user choose primary.
+
+**Future Solution**: Conflict resolution UI, merge stories, version comparison, "most complete" auto-selection.
+
+---
+
+#### 3. Photo Quality Issues
+**Problem**: Blurry, damaged, or unreadable photos.
+
+**Impact**: Poor extraction, bad animations, unusable content.
+
+**MVP Workaround**: Basic quality check, suggest re-scanning if below threshold.
+
+**Future Solution**: AI photo restoration, quality scoring, auto-enhancement options.
+
+---
+
+#### 4. Privacy & Sensitive Information
+**Problem**: Conversations may contain private details, health issues, family conflicts.
+
+**Impact**: Legal/ethical concerns, privacy violations.
+
+**MVP Workaround**: User review before publishing, basic content warnings.
+
+**Future Solution**: Content moderation, privacy filters, granular sharing controls, sensitive content detection.
+
+---
+
+#### 5. Storage Costs at Scale
+**Problem**: Large albums, high-res photos, video files add up quickly.
+
+**Impact**: Expensive infrastructure, user quotas needed.
+
+**MVP Workaround**: Use free tiers, compress images, limit album sizes.
+
+**Future Solution**: Tiered storage, compression optimization, user quotas, pay-per-use model.
+
+---
+
+### Technical Considerations
+
+#### 6. Multi-Language Support
+**Problem**: Conversations in different languages (e.g., Grandma speaks Spanish, kids speak English).
+
+**Impact**: Narration generation, TTS, story extraction.
+
+**MVP Workaround**: English only, detect language and warn.
+
+**Future Solution**: Multi-language TTS, translation for narration, language detection per conversation.
+
+---
+
+#### 7. EXIF Metadata Conflicts
+**Problem**: Photos already have dates/locations in EXIF data.
+
+**Impact**: Conflicting information between EXIF and conversation.
+
+**MVP Workaround**: Use EXIF as default, allow user override.
+
+**Future Solution**: Smart merging, confidence scoring, "most likely" inference.
+
+---
+
+#### 8. Incomplete Albums
+**Problem**: User starts album, never finishes, or abandons mid-conversation.
+
+**Impact**: Orphaned data, storage waste, confusion.
+
+**MVP Workaround**: Auto-save drafts, basic cleanup.
+
+**Future Solution**: "Continue later" prompts, auto-archive incomplete albums, cleanup policies.
+
+---
+
+#### 9. Photo Ownership & Permissions
+**Problem**: Who can edit/delete photos? Who owns the conversation?
+
+**Impact**: Collaboration conflicts, data loss.
+
+**MVP Workaround**: Simple owner/contributor model.
+
+**Future Solution**: Role-based permissions (owner, editor, viewer), granular controls, audit logs.
+
+---
+
+#### 10. Batch Processing
+**Problem**: User wants to scan 50 photos at once.
+
+**Impact**: Current flow is one-at-a-time, slow.
+
+**MVP Workaround**: Manual one-by-one scanning.
+
+**Future Solution**: Batch upload, queue system, progress tracking, background processing.
+
+---
+
+#### 11. Offline Mode
+**Problem**: Poor connectivity during scanning (e.g., scanning old photos in basement).
+
+**Impact**: Can't use Live API, can't save.
+
+**MVP Workaround**: Requires internet connection.
+
+**Future Solution**: Local storage, sync when online, queue uploads, offline conversation mode.
+
+---
+
+#### 12. Photo Formats & Sources
+**Problem**: Old physical photos vs digital uploads vs screenshots.
+
+**Impact**: Different processing needs, quality variations.
+
+**MVP Workaround**: Focus on physical photo scanning.
+
+**Future Solution**: Support multiple input methods, format normalization, source detection.
+
+---
+
+#### 13. Temporal Context Errors
+**Problem**: Photo date is wrong or unknown.
+
+**Impact**: Incorrect timeline, wrong context.
+
+**MVP Workaround**: User provides date in conversation.
+
+**Future Solution**: AI date inference from conversation, visual analysis, user correction UI.
+
+---
+
+#### 14. Story Accuracy & Hallucinations
+**Problem**: AI misinterprets conversation or makes up details.
+
+**Impact**: Incorrect stories, loss of trust.
+
+**MVP Workaround**: User review step, edit capability.
+
+**Future Solution**: Fact-checking prompts, confidence scores, source attribution, edit history.
+
+---
+
+### UX Enhancements
+
+#### 15. Voice Cloning Consent
+**Problem**: Do all family members consent to voice cloning?
+
+**Impact**: Privacy, ethical concerns.
+
+**MVP Workaround**: Explicit opt-in, use default voice if declined.
+
+**Future Solution**: Per-person consent, voice sample approval workflow, revocation options.
+
+---
+
+#### 16. Album Sharing & Collaboration
+**Problem**: Who can see/edit? Public vs private? Share links?
+
+**Impact**: Privacy, collaboration needs.
+
+**MVP Workaround**: Basic private albums, simple invite system.
+
+**Future Solution**: Granular permissions, public/private/unlisted, share links with expiration, collaboration features.
+
+---
+
+#### 17. Version Control
+**Problem**: User wants to regenerate narration with different order.
+
+**Impact**: Losing previous versions, can't compare.
+
+**MVP Workaround**: Overwrite previous narration.
+
+**Future Solution**: Save multiple versions, "Create new version" button, version comparison, rollback.
+
+---
+
+#### 18. Photo Restoration
+**Problem**: Damaged/old photos that need restoration.
+
+**Impact**: Poor quality, unusable.
+
+**MVP Workaround**: Use as-is, or suggest professional restoration.
+
+**Future Solution**: Optional AI restoration step before extraction, quality enhancement.
+
+---
+
+#### 19. Conversation Editing
+**Problem**: Can users edit/delete conversations after storing?
+
+**Impact**: Mistakes, changing stories, data integrity.
+
+**MVP Workaround**: Basic edit/delete, no history.
+
+**Future Solution**: Edit history, soft delete, "undo" functionality, version tracking.
+
+---
+
+### Business/Legal Considerations
+
+#### 20. Data Retention & Legacy
+**Problem**: How long to keep data? What if user dies? Inheritance?
+
+**Impact**: Long-term storage, family legacy.
+
+**MVP Workaround**: Standard data retention policies.
+
+**Future Solution**: Data export, inheritance/legacy access, "digital will" features, long-term archival.
+
+---
+
+#### 21. Copyright & Ownership
+**Problem**: Who owns generated content? Can it be commercialized?
+
+**Impact**: Legal clarity, user rights.
+
+**MVP Workaround**: User owns outputs (standard ToS).
+
+**Future Solution**: Explicit ownership terms, licensing options, commercial use policies.
+
+---
+
+#### 22. GDPR/Privacy Compliance
+**Problem**: EU users, data portability, right to deletion.
+
+**Impact**: Legal requirements, user rights.
+
+**MVP Workaround**: Basic privacy controls.
+
+**Future Solution**: Full GDPR compliance, data export, deletion workflows, consent management.
+
+---
+
+#### 23. Cost Overruns
+**Problem**: User generates many Veo animations, exceeds budget.
+
+**Impact**: Unexpected costs, user frustration.
+
+**MVP Workaround**: Usage limits, cost warnings.
+
+**Future Solution**: Pay-per-use model, usage dashboards, budget alerts, tiered pricing.
+
+---
+
+### Edge Cases
+
+#### 24. Empty Albums
+**Problem**: Album created but no photos added.
+
+**Impact**: Confusion, clutter.
+
+**MVP Workaround**: Manual deletion.
+
+**Future Solution**: Auto-delete after X days, or convert to draft, "start adding photos" prompts.
+
+---
+
+#### 25. Single-Photo Albums
+**Problem**: Only one photo in album.
+
+**Impact**: Narration doesn't need transitions.
+
+**MVP Workaround**: Special handling in narration generation.
+
+**Future Solution**: Single-photo narration templates, "add more photos" suggestions.
+
+---
+
+#### 26. Photos Without People
+**Problem**: Landscape photos, objects, no faces.
+
+**Impact**: Person-based albums can't include these.
+
+**MVP Workaround**: Filter out, or allow with "no people" tag.
+
+**Future Solution**: Object/place-based albums, alternative organization methods.
+
+---
+
+#### 27. Very Old Photos
+**Problem**: Photos from 1800s, no context available.
+
+**Impact**: Limited story extraction.
+
+**MVP Workaround**: Accept "unknown" facts, focus on what can be extracted.
+
+**Future Solution**: Historical context AI, period-appropriate narration, research integration.
+
+---
+
+#### 28. Group Photos
+**Problem**: 20+ people in one photo.
+
+**Impact**: Tagging becomes overwhelming.
+
+**MVP Workaround**: Tag key people only.
+
+**Future Solution**: "Key people" selection, auto-face detection with suggestions, group tagging.
+
+---
+
+#### 29. Video Clips
+**Problem**: User wants to include video clips, not just photos.
+
+**Impact**: Current system is photo-only.
+
+**MVP Workaround**: Not supported.
+
+**Future Solution**: Video upload support, frame extraction, or full video integration in albums.
+
+---
+
+#### 30. Cross-Album Context
+**Problem**: Same person appears in multiple albums, context should be shared.
+
+**Impact**: Knowledge base should be global, not per-album.
+
+**MVP Workaround**: Basic cross-album knowledge sharing.
+
+**Future Solution**: Global knowledge graph, cross-album references, unified person profiles.
+
+---
+
+### Prioritization for Post-MVP
+
+**High Priority** (Address soon after MVP):
+1. Duplicate photo detection
+2. Conversation conflicts handling
+3. Privacy & sensitive information
+4. Photo quality issues
+5. Storage cost optimization
+
+**Medium Priority** (Next phase):
+6. Multi-language support
+7. Batch processing
+8. Album sharing & collaboration
+9. Version control
+10. Offline mode
+
+**Low Priority** (Nice to have):
+11. Photo restoration
+12. Video clips support
+13. Advanced permissions
+14. Legacy/inheritance features
+15. Commercial use options
+
+---
+
 *This document is a living plan. Update as decisions are made.*
