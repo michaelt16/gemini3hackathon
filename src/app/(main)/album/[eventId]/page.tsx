@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useParams } from 'next/navigation';
 import Link from 'next/link';
+import AlbumSidebar from '@/components/AlbumSidebar';
 
 // Mock data - will be replaced with real API data
 const mockEventData = {
@@ -63,131 +64,137 @@ export default function EventDetailPage() {
   ];
 
   return (
-    <div className="max-w-5xl mx-auto p-4 md:p-8">
-      {/* Header */}
-      <div className="mb-6">
-        <Link href="/album" className="text-sm text-[var(--accent)] hover:underline mb-2 inline-block">
-          ← Back to Album
-        </Link>
-        <div className="flex items-start justify-between">
-          <div>
-            <h1 className="text-3xl font-semibold text-[var(--accent)] mb-1" style={{ fontFamily: 'var(--font-crimson)' }}>
-              {event.title}
-            </h1>
-            <p className="text-[var(--foreground)] opacity-60">
-              {new Date(event.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
-              {event.location && ` • ${event.location}`}
-            </p>
+    <div className="min-h-screen bg-[var(--paper)] flex">
+      <AlbumSidebar />
+      
+      <div className="flex-1 lg:ml-20">
+        <div className="max-w-5xl mx-auto p-4 md:p-8">
+          {/* Header */}
+          <div className="mb-6">
+            <Link href="/album" className="text-sm text-[var(--accent)] hover:underline mb-2 inline-block">
+              ← Back to Album
+            </Link>
+            <div className="flex items-start justify-between">
+              <div>
+                <h1 className="text-3xl font-semibold text-[var(--accent)] mb-1" style={{ fontFamily: 'var(--font-crimson)' }}>
+                  {event.title}
+                </h1>
+                <p className="text-[var(--foreground)] opacity-60">
+                  {new Date(event.date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}
+                  {event.location && ` • ${event.location}`}
+                </p>
+              </div>
+              {event.hasRecap && (
+                <button className="py-2 px-4 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg text-sm hover:opacity-90">
+                  🎬 Watch Recap
+                </button>
+              )}
+            </div>
           </div>
-          {event.hasRecap && (
-            <button className="py-2 px-4 bg-gradient-to-r from-purple-500 to-pink-500 text-white rounded-lg text-sm hover:opacity-90">
-              🎬 Watch Recap
-            </button>
+
+          {/* Tabs */}
+          <div className="flex gap-1 mb-6 border-b border-[var(--accent)] border-opacity-20 overflow-x-auto">
+            {tabs.map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => setActiveTab(tab.id)}
+                className={`px-4 py-3 text-sm whitespace-nowrap border-b-2 transition-colors ${
+                  activeTab === tab.id
+                    ? 'border-[var(--accent)] text-[var(--accent)]'
+                    : 'border-transparent text-[var(--foreground)] opacity-60 hover:opacity-100'
+                }`}
+              >
+                {tab.icon} {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* Tab Content */}
+          {activeTab === 'overview' && (
+            <div className="space-y-6">
+              <div className="paper-texture p-6 rounded-xl">
+                <h3 className="text-sm font-semibold text-[var(--accent)] uppercase tracking-wide mb-3">Story Summary</h3>
+                <p className="text-[var(--foreground)] leading-relaxed">{event.summary}</p>
+              </div>
+              <div className="grid md:grid-cols-2 gap-4">
+                <div className="paper-texture p-4 rounded-xl">
+                  <h3 className="text-sm font-semibold text-[var(--accent)] uppercase tracking-wide mb-2">People ({event.people.length})</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {event.people.map((person, i) => (
+                      <span key={i} className="px-3 py-1 bg-[var(--accent)] bg-opacity-10 rounded-full text-sm">{person}</span>
+                    ))}
+                  </div>
+                </div>
+                <div className="paper-texture p-4 rounded-xl">
+                  <h3 className="text-sm font-semibold text-[var(--accent)] uppercase tracking-wide mb-2">Stats</h3>
+                  <div className="grid grid-cols-2 gap-2 text-sm">
+                    <div><span className="opacity-60">Photos:</span> {event.photos.length}</div>
+                    <div><span className="opacity-60">Animated:</span> {event.photos.filter(p => p.animated).length}</div>
+                    <div><span className="opacity-60">Contributors:</span> {event.contributors.length}</div>
+                    <div><span className="opacity-60">Recap:</span> {event.hasRecap ? 'Yes' : 'Not yet'}</div>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
-        </div>
-      </div>
 
-      {/* Tabs */}
-      <div className="flex gap-1 mb-6 border-b border-[var(--accent)] border-opacity-20 overflow-x-auto">
-        {tabs.map((tab) => (
-          <button
-            key={tab.id}
-            onClick={() => setActiveTab(tab.id)}
-            className={`px-4 py-3 text-sm whitespace-nowrap border-b-2 transition-colors ${
-              activeTab === tab.id
-                ? 'border-[var(--accent)] text-[var(--accent)]'
-                : 'border-transparent text-[var(--foreground)] opacity-60 hover:opacity-100'
-            }`}
-          >
-            {tab.icon} {tab.label}
-          </button>
-        ))}
-      </div>
+          {activeTab === 'photos' && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              {event.photos.map((photo, i) => (
+                <div key={photo.id} className="aspect-square bg-gradient-to-br from-gray-200 to-gray-300 rounded-lg relative overflow-hidden">
+                  <div className="absolute inset-0 flex items-center justify-center text-4xl opacity-30">📷</div>
+                  {photo.animated && (
+                    <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">✨ Animated</div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
 
-      {/* Tab Content */}
-      {activeTab === 'overview' && (
-        <div className="space-y-6">
-          <div className="paper-texture p-6 rounded-xl">
-            <h3 className="text-sm font-semibold text-[var(--accent)] uppercase tracking-wide mb-3">Story Summary</h3>
-            <p className="text-[var(--foreground)] leading-relaxed">{event.summary}</p>
-          </div>
-          <div className="grid md:grid-cols-2 gap-4">
-            <div className="paper-texture p-4 rounded-xl">
-              <h3 className="text-sm font-semibold text-[var(--accent)] uppercase tracking-wide mb-2">People ({event.people.length})</h3>
-              <div className="flex flex-wrap gap-2">
-                {event.people.map((person, i) => (
-                  <span key={i} className="px-3 py-1 bg-[var(--accent)] bg-opacity-10 rounded-full text-sm">{person}</span>
+          {activeTab === 'timeline' && (
+            <div className="paper-texture p-6 rounded-xl">
+              <div className="space-y-4">
+                {event.timeline.map((item, i) => (
+                  <div key={i} className="flex gap-4">
+                    <div className="w-24 text-sm text-[var(--accent)] font-medium shrink-0">{item.time}</div>
+                    <div className="flex-1 pb-4 border-l-2 border-[var(--accent)] border-opacity-30 pl-4 -ml-px">
+                      <div className="w-3 h-3 bg-[var(--accent)] rounded-full -ml-[22px] mb-2" />
+                      <p className="text-[var(--foreground)]">{item.event}</p>
+                    </div>
+                  </div>
                 ))}
               </div>
             </div>
-            <div className="paper-texture p-4 rounded-xl">
-              <h3 className="text-sm font-semibold text-[var(--accent)] uppercase tracking-wide mb-2">Stats</h3>
-              <div className="grid grid-cols-2 gap-2 text-sm">
-                <div><span className="opacity-60">Photos:</span> {event.photos.length}</div>
-                <div><span className="opacity-60">Animated:</span> {event.photos.filter(p => p.animated).length}</div>
-                <div><span className="opacity-60">Contributors:</span> {event.contributors.length}</div>
-                <div><span className="opacity-60">Recap:</span> {event.hasRecap ? 'Yes' : 'Not yet'}</div>
-              </div>
+          )}
+
+          {activeTab === 'contributors' && (
+            <div className="space-y-4">
+              {event.contributors.map((c, i) => (
+                <div key={i} className="paper-texture p-4 rounded-xl flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="w-10 h-10 rounded-full bg-[var(--accent)] text-white flex items-center justify-center font-medium">{c.name[0]}</div>
+                    <div>
+                      <div className="font-medium">{c.name}</div>
+                      <div className="text-sm text-[var(--foreground)] opacity-50">{c.snippets} stories shared</div>
+                    </div>
+                  </div>
+                </div>
+              ))}
             </div>
+          )}
+
+          {/* Actions */}
+          <div className="mt-8 flex gap-3 justify-center">
+            <Link href={`/capture/${event.id}`} className="py-2 px-4 border border-[var(--accent)] text-[var(--accent)] rounded-lg text-sm hover:bg-[var(--accent)] hover:bg-opacity-5">
+              + Add More Stories
+            </Link>
+            {!event.hasRecap && (
+              <button className="py-2 px-4 bg-[var(--accent)] text-white rounded-lg text-sm hover:bg-[var(--accent-light)]">
+                Generate Recap Video
+              </button>
+            )}
           </div>
         </div>
-      )}
-
-      {activeTab === 'photos' && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {event.photos.map((photo, i) => (
-            <div key={photo.id} className="aspect-square bg-gradient-to-br from-gray-200 to-gray-300 rounded-lg relative overflow-hidden">
-              <div className="absolute inset-0 flex items-center justify-center text-4xl opacity-30">📷</div>
-              {photo.animated && (
-                <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-0.5 rounded-full">✨ Animated</div>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
-
-      {activeTab === 'timeline' && (
-        <div className="paper-texture p-6 rounded-xl">
-          <div className="space-y-4">
-            {event.timeline.map((item, i) => (
-              <div key={i} className="flex gap-4">
-                <div className="w-24 text-sm text-[var(--accent)] font-medium shrink-0">{item.time}</div>
-                <div className="flex-1 pb-4 border-l-2 border-[var(--accent)] border-opacity-30 pl-4 -ml-px">
-                  <div className="w-3 h-3 bg-[var(--accent)] rounded-full -ml-[22px] mb-2" />
-                  <p className="text-[var(--foreground)]">{item.event}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {activeTab === 'contributors' && (
-        <div className="space-y-4">
-          {event.contributors.map((c, i) => (
-            <div key={i} className="paper-texture p-4 rounded-xl flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-[var(--accent)] text-white flex items-center justify-center font-medium">{c.name[0]}</div>
-                <div>
-                  <div className="font-medium">{c.name}</div>
-                  <div className="text-sm text-[var(--foreground)] opacity-50">{c.snippets} stories shared</div>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Actions */}
-      <div className="mt-8 flex gap-3 justify-center">
-        <Link href={`/capture/${event.id}`} className="py-2 px-4 border border-[var(--accent)] text-[var(--accent)] rounded-lg text-sm hover:bg-[var(--accent)] hover:bg-opacity-5">
-          + Add More Stories
-        </Link>
-        {!event.hasRecap && (
-          <button className="py-2 px-4 bg-[var(--accent)] text-white rounded-lg text-sm hover:bg-[var(--accent-light)]">
-            Generate Recap Video
-          </button>
-        )}
       </div>
     </div>
   );

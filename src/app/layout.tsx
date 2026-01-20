@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Crimson_Pro, Lora } from "next/font/google";
 import "./globals.css";
+import { NavigationLoadingProvider } from "@/components/NavigationLoading";
 
 const crimsonPro = Crimson_Pro({
   variable: "--font-crimson",
@@ -30,7 +31,9 @@ export default function RootLayout({
         className={`${crimsonPro.variable} ${lora.variable} antialiased`}
         style={{ fontFamily: 'var(--font-lora), Georgia, serif' }}
       >
-        {children}
+        <NavigationLoadingProvider>
+          {children}
+        </NavigationLoadingProvider>
       </body>
     </html>
   );

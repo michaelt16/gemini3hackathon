@@ -1,95 +1,140 @@
+'use client';
+
 import Link from 'next/link';
+import Image from 'next/image';
+import { useEffect, useRef } from 'react';
 
 export default function HomePage() {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const handleTimeUpdate = () => {
+      if (video.currentTime >= 9) {
+        video.currentTime = 0;
+      }
+    };
+
+    video.addEventListener('timeupdate', handleTimeUpdate);
+    video.currentTime = 0;
+
+    return () => {
+      video.removeEventListener('timeupdate', handleTimeUpdate);
+    };
+  }, []);
+
   return (
-    <main className="min-h-screen flex flex-col">
-      {/* Hero Section */}
-      <div className="flex-1 flex flex-col items-center justify-center p-8 relative overflow-hidden">
-        {/* Decorative background */}
-        <div className="absolute inset-0 opacity-5">
-          <div className="absolute top-20 left-20 w-64 h-64 rounded-full bg-[var(--accent)] blur-3xl" />
-          <div className="absolute bottom-20 right-20 w-96 h-96 rounded-full bg-[var(--accent-light)] blur-3xl" />
-                </div>
-                
-        <div className="relative z-10 text-center max-w-3xl mx-auto">
-          {/* Logo/Title */}
-          <div className="mb-8">
-            <div className="inline-flex items-center justify-center w-20 h-20 rounded-full bg-gradient-to-br from-[var(--accent)] to-[var(--accent-light)] mb-6 shadow-lg">
-              <span className="text-4xl">📖</span>
-            </div>
-            <h1 
-              className="text-5xl md:text-6xl font-semibold text-[var(--accent)] mb-4"
-              style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
-            >
-              Living Memory
-            </h1>
-            <p className="text-xl text-[var(--foreground)] opacity-70 max-w-xl mx-auto leading-relaxed">
-              Preserve family stories across generations. Collect memories, weave narratives, 
-              and create living photo albums that tell your family&apos;s story.
-            </p>
-          </div>
+    <main className="h-screen w-screen relative overflow-hidden bg-black">
+      {/* Cinematic letterbox - top bar */}
+      <div className="absolute top-0 left-0 right-0 h-[9vh] bg-black z-30" />
 
-          {/* Mode Selection */}
-          <div className="grid md:grid-cols-2 gap-6 mt-12 max-w-2xl mx-auto">
-            {/* Capture Mode */}
-            <Link 
-              href="/capture"
-              className="group paper-texture p-8 rounded-2xl border-2 border-transparent hover:border-[var(--accent)] transition-all duration-300 hover:shadow-xl"
-            >
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-rose-500 to-orange-500 flex items-center justify-center mb-4 mx-auto group-hover:scale-110 transition-transform">
-                <span className="text-3xl">📸</span>
-              </div>
-              <h2 className="text-2xl font-semibold text-[var(--accent)] mb-2" style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}>
-                Capture
-              </h2>
-              <p className="text-[var(--foreground)] opacity-60 text-sm leading-relaxed">
-                Share stories about your photos through natural conversation. 
-                Point your camera at old albums and talk about the memories.
-              </p>
-              <div className="mt-4 text-xs text-[var(--accent)] opacity-70">
-                Mobile-friendly • Voice & Camera
-              </div>
-            </Link>
-
-            {/* Album Mode */}
-            <Link 
-              href="/album"
-              className="group paper-texture p-8 rounded-2xl border-2 border-transparent hover:border-[var(--accent)] transition-all duration-300 hover:shadow-xl"
-            >
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-500 flex items-center justify-center mb-4 mx-auto group-hover:scale-110 transition-transform">
-                <span className="text-3xl">🎞️</span>
-              </div>
-              <h2 className="text-2xl font-semibold text-[var(--accent)] mb-2" style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}>
-                Album
-              </h2>
-              <p className="text-[var(--foreground)] opacity-60 text-sm leading-relaxed">
-                Browse your family events, explore timelines, see who contributed what, 
-                and watch generated recap videos.
-              </p>
-              <div className="mt-4 text-xs text-[var(--accent)] opacity-70">
-                Desktop-friendly • Browse & Review
-              </div>
-            </Link>
-          </div>
-
-          {/* Playground Link */}
-          <div className="mt-12 pt-8 border-t border-[var(--accent)] border-opacity-20">
-            <Link 
-              href="/playground"
-              className="inline-flex items-center gap-2 text-sm text-[var(--foreground)] opacity-50 hover:opacity-100 transition-opacity"
-            >
-              <span>🧪</span>
-              <span>API Playground</span>
-              <span className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">Dev</span>
-            </Link>
-          </div>
-        </div>
+      {/* Logo Header - Centered vertically in letterbox bar */}
+      <div className="absolute top-0 left-6 md:left-8 h-[9vh] flex items-center z-40 py-2">
+        <Link href="/" className="group flex items-center gap-2 hover:opacity-80 transition-opacity">
+          <Image
+            src="/livingmemory.png"
+            alt="Living Memory"
+            width={120}
+            height={120}
+            className="w-20 h-20 md:w-28 md:h-28 lg:w-32 lg:h-32 object-contain"
+            priority
+          />
+        </Link>
       </div>
 
-      {/* Footer */}
-      <footer className="p-6 text-center text-sm text-[var(--foreground)] opacity-40 border-t border-[var(--accent)] border-opacity-10">
-        <p>Built for Gemini 3 Hackathon • Preserving memories with AI</p>
-      </footer>
+      {/* Video Background */}
+      <video
+        ref={videoRef}
+        autoPlay
+        muted
+        playsInline
+        preload="metadata"
+        className="absolute w-full h-full object-cover"
+        style={{ top: '9.5vh', bottom: 0 }}
+      >
+        <source src="/remento.mp4" type="video/mp4" />
+      </video>
+
+      {/* Cinematic vignette overlay */}
+      <div 
+        className="absolute z-10 pointer-events-none"
+        style={{
+          top: '8.5vh',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          background: 'radial-gradient(ellipse at center, transparent 0%, transparent 40%, rgba(0,0,0,0.6) 100%)'
+        }}
+      />
+
+      {/* Film grain texture */}
+      <div 
+        className="absolute z-20 pointer-events-none opacity-[0.03] mix-blend-overlay"
+        style={{
+          top: '9.5vh',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`
+        }}
+      />
+
+      {/* Content Layer */}
+      <div className="relative z-20 h-full flex flex-col justify-end pb-[16vh] px-8 md:px-16 lg:px-24">
+        
+        {/* Main Title - Large, cinematic */}
+        <div className="animate-fade-in-up" style={{ animationDelay: '0.3s' }}>
+          <h1 
+            className="text-[4rem] md:text-[7rem] lg:text-[9rem] xl:text-[11rem] font-light text-white leading-[0.85] tracking-[-0.02em]"
+            style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+          >
+            Living
+            <br />
+            <span className="italic font-normal">Memory</span>
+          </h1>
+        </div>
+
+        {/* Tagline - Simple, elegant */}
+        <p 
+          className="text-white/70 text-lg md:text-xl lg:text-2xl mt-6 md:mt-8 max-w-md font-light tracking-wide animate-fade-in-up"
+          style={{ animationDelay: '0.6s' }}
+        >
+          Preserve what matters most.
+        </p>
+
+        {/* CTA - Minimal, inline */}
+        <div 
+          className="flex items-center gap-6 mt-10 md:mt-12 animate-fade-in-up"
+          style={{ animationDelay: '0.9s' }}
+        >
+          <Link 
+            href="/capture"
+            className="group flex items-center gap-3 text-white text-sm md:text-base tracking-widest uppercase hover:text-white/80 transition-colors"
+          >
+            <span>Enter</span>
+            <svg 
+              className="w-5 h-5 group-hover:translate-x-2 transition-transform duration-300" 
+              fill="none" 
+              viewBox="0 0 24 24" 
+              stroke="currentColor"
+              strokeWidth={1}
+            >
+              <path strokeLinecap="round" strokeLinejoin="round" d="M17 8l4 4m0 0l-4 4m4-4H3" />
+            </svg>
+          </Link>
+          
+          <span className="text-white/30">|</span>
+          
+          <Link 
+            href="/album"
+            className="text-white/50 text-sm md:text-base tracking-widest uppercase hover:text-white/80 transition-colors"
+          >
+            Browse Album
+          </Link>
+        </div>
+      </div>
     </main>
   );
 }

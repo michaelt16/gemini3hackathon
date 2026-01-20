@@ -298,6 +298,36 @@ export class GeminiLiveClient {
     });
   }
 
+  // Send context information (like album details, existing photos, etc.)
+  // This is useful for providing background information the AI can reference
+  sendContext(context: string): void {
+    if (!this.ws || !this.isConnected) {
+      console.error('Not connected to Live API');
+      return;
+    }
+
+    // Send as a system-like message that provides context
+    // The AI will use this information but won't respond to it directly
+    const message = {
+      clientContent: {
+        turns: [
+          {
+            role: 'user',
+            parts: [{ 
+              text: `[CONTEXT] ${context}` 
+            }],
+          },
+        ],
+        turnComplete: true,
+      },
+    };
+
+    this.ws.send(JSON.stringify(message));
+    
+    // Don't emit this as a user message since it's background context
+    console.log('Context sent to AI:', context.substring(0, 100) + '...');
+  }
+
   // Send audio data (PCM 16-bit, 16kHz, mono)
   sendAudio(audioData: ArrayBuffer): void {
     if (!this.ws || !this.isConnected) return;
