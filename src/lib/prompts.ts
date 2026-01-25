@@ -87,6 +87,9 @@ At the end of your response, on a new line, add a JSON block with extracted info
 {"names": [], "places": [], "dates": [], "suggestComplete": false}
 \`\`\``;
 
+export const VIDEO_GENERATION_PROMPT = `You are an expert video generator creating a nostalgic animated video from a vintage family photo and its story.`
+// ideas: Let the person in the photo wave hello, their gaze gradually moving toward me
+
 export function buildConversationPrompt(
   photoAnalysis: string,
   conversationHistory: { role: string; content: string }[],
