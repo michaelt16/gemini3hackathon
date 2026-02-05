@@ -35,7 +35,23 @@ export function usePhotoScanner({ videoRef, currentFrameRef, onToast }: UsePhoto
   const stillFrameCountRef = useRef<number>(0);
   const requiredStillFrames = 1;
 
+  const stopScanning = useCallback(() => {
+    if (scanningIntervalRef.current) {
+      clearInterval(scanningIntervalRef.current);
+      scanningIntervalRef.current = null;
+    }
+    setIsScanning(false);
+    setPhotoDetected(false);
+    setScanStatus('');
+    scanningAttemptsRef.current = 0;
+    previousFrameRef.current = null;
+    stillFrameCountRef.current = 0;
+  }, []);
+
   const capturePhoto = useCallback(async (description?: string) => {
+    // Always stop scanner when capturing - never auto-restart
+    stopScanning();
+    
     const now = Date.now();
     if (now - lastCaptureTimeRef.current < 3000) {
       console.log('Capture debounced');
@@ -88,7 +104,7 @@ export function usePhotoScanner({ videoRef, currentFrameRef, onToast }: UsePhoto
 
     onToast('📸 Photo saved!');
     setScannedPhotos(prev => [newPhoto, ...prev].slice(0, 20));
-  }, [videoRef, currentFrameRef, onToast]);
+  }, [videoRef, currentFrameRef, onToast, stopScanning]);
 
   const startScanning = useCallback(() => {
     if (!videoRef.current || !currentFrameRef.current || isScanning) return;
@@ -134,7 +150,7 @@ export function usePhotoScanner({ videoRef, currentFrameRef, onToast }: UsePhoto
         
         if (stillFrameCountRef.current >= requiredStillFrames) {
           setPhotoDetected(true);
-          setScanStatus('✅ Ready! Capturing...');
+          setScanStatus('📷 Hold still - capturing now!');
           setTimeout(async () => {
             stopScanning();
             await capturePhoto('Auto-detected photo');
@@ -152,19 +168,16 @@ export function usePhotoScanner({ videoRef, currentFrameRef, onToast }: UsePhoto
         setScanStatus('🔍 Looking for photo...');
       }
     }, 800);
-  }, [videoRef, currentFrameRef, isScanning, onToast, capturePhoto]);
+  }, [videoRef, currentFrameRef, isScanning, onToast, capturePhoto, stopScanning]);
 
-  const stopScanning = useCallback(() => {
-    if (scanningIntervalRef.current) {
-      clearInterval(scanningIntervalRef.current);
-      scanningIntervalRef.current = null;
-    }
-    setIsScanning(false);
-    setPhotoDetected(false);
-    setScanStatus('');
-    scanningAttemptsRef.current = 0;
-    previousFrameRef.current = null;
-    stillFrameCountRef.current = 0;
+  // Remove a photo from scannedPhotos (for delete/retake)
+  const removePhoto = useCallback((photoId: string) => {
+    setScannedPhotos(prev => prev.filter(p => p.id !== photoId));
+  }, []);
+
+  // Clear all captured hashes (allows recapturing same photos)
+  const clearHashes = useCallback(() => {
+    capturedPhotoHashesRef.current.clear();
   }, []);
 
   return {
@@ -175,5 +188,7 @@ export function usePhotoScanner({ videoRef, currentFrameRef, onToast }: UsePhoto
     capturePhoto,
     startScanning,
     stopScanning,
+    removePhoto,
+    clearHashes,
   };
 }

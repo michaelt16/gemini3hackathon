@@ -328,6 +328,38 @@ export class GeminiLiveClient {
     console.log('Context sent to AI:', context.substring(0, 100) + '...');
   }
 
+  /**
+   * Send a user turn with both an image and text (e.g. cropped photo + "I just captured this photo...").
+   * Uses clientContent with Content parts: image (inlineData) + text. The model can then respond about the image.
+   */
+  sendTextWithImage(text: string, imageDataUrl: string): void {
+    if (!this.ws || !this.isConnected) {
+      console.error('Not connected to Live API');
+      return;
+    }
+    const base64Data = imageDataUrl.replace(/^data:image\/\w+;base64,/, '');
+    const message = {
+      clientContent: {
+        turns: [
+          {
+            role: 'user',
+            parts: [
+              { inlineData: { mimeType: 'image/jpeg', data: base64Data } },
+              { text },
+            ],
+          },
+        ],
+        turnComplete: true,
+      },
+    };
+    this.ws.send(JSON.stringify(message));
+    this.callbacks.onMessage?.({
+      type: 'user',
+      content: text,
+      timestamp: Date.now(),
+    });
+  }
+
   // Send audio data (PCM 16-bit, 16kHz, mono)
   sendAudio(audioData: ArrayBuffer): void {
     if (!this.ws || !this.isConnected) return;
@@ -432,6 +464,11 @@ export class GeminiLiveClient {
       }
       
       const ctx = this.playbackContext;
+      
+      // Resume AudioContext if suspended (browser autoplay policy)
+      if (ctx.state === 'suspended') {
+        ctx.resume();
+      }
       
       // Process all queued audio immediately
       while (this.audioQueue.length > 0) {

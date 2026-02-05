@@ -26,13 +26,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body
         className={`${crimsonPro.variable} ${lora.variable} antialiased`}
         style={{ fontFamily: 'var(--font-lora), Georgia, serif' }}
+        suppressHydrationWarning
       >
         <NavigationLoadingProvider>
-          {children}
+        {children}
         </NavigationLoadingProvider>
       </body>
     </html>

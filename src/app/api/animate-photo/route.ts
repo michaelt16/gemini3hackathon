@@ -53,8 +53,10 @@ async function animatePhoto(
     const estimatedDuration = Math.ceil(storyText.split(/\s+/).length / 2.5);
     const duration = estimatedDuration <= 4 ? 4 : estimatedDuration <= 6 ? 6 : 8;
     
-    // Build animation prompt for subtle, minimal animation
-    const animationPrompt = `Create a subtle, minimal animation of this photo. Very slow, gentle movement. Focus on environmental elements (water, leaves, clouds, wind, light). Like a Live Photo - barely noticeable motion. Keep it natural and cinematic.`;
+    // Build animation prompt - match Grok style for consistent quality
+    const animationPrompt = storyText
+      ? `Bring this photograph to life with natural, cinematic animation. The photo shows: ${storyText}. Add subtle movement like wind in hair and clothes, gentle breathing, environmental motion like leaves or water, light flickering. Keep the main subject stable while the environment comes alive. Smooth, natural motion. Don't change the faces, don't make them talk. No background music, but keep background noises.`
+      : `Bring this photograph to life with natural, cinematic animation. Add subtle movement like wind in hair and clothes, gentle breathing, environmental motion like leaves or water, light flickering. Keep the main subject stable while the environment comes alive. Smooth, natural motion. Don't change the faces, don't make them talk. No background music, but keep background noises.`;
     
     // Determine aspect ratio from image (default to 16:9)
     // Could analyze image dimensions, but for now default to 16:9
@@ -94,8 +96,32 @@ export async function POST(request: NextRequest) {
     const body = await request.json();
     const { photoUrl, photoBase64, storyText, animationStyle = 'subtle' } = body;
 
-    // Accept either photoUrl (base64 data URL) or photoBase64 (raw base64)
-    const imageBase64 = photoBase64 || photoUrl;
+    // Accept either photoBase64 (raw base64 or data URL) or photoUrl (http URL or data URL)
+    let imageBase64 = photoBase64 || '';
+    
+    // If we have a photoUrl that's an http(s) URL, fetch and convert to base64
+    if (!imageBase64 && photoUrl) {
+      if (photoUrl.startsWith('http://') || photoUrl.startsWith('https://')) {
+        try {
+          console.log('🎬 Fetching image from URL:', photoUrl.substring(0, 100) + '...');
+          const imageResponse = await fetch(photoUrl);
+          if (imageResponse.ok) {
+            const buffer = await imageResponse.arrayBuffer();
+            const base64 = Buffer.from(buffer).toString('base64');
+            const contentType = imageResponse.headers.get('content-type') || 'image/jpeg';
+            imageBase64 = `data:${contentType};base64,${base64}`;
+            console.log('🎬 Image fetched successfully, size:', buffer.byteLength);
+          } else {
+            console.error('🎬 Failed to fetch image:', imageResponse.status);
+          }
+        } catch (fetchError) {
+          console.error('🎬 Error fetching image:', fetchError);
+        }
+      } else {
+        // photoUrl is likely a data URL or base64 string
+        imageBase64 = photoUrl;
+      }
+    }
     
     if (!imageBase64) {
       return NextResponse.json(

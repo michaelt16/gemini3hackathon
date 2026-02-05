@@ -23,6 +23,34 @@ html, body {
   min-height: 100%;
 }
 
+/* Global scrollbar - matches dark warm aesthetic */
+html {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(139, 115, 85, 0.5) rgba(15, 13, 10, 0.8);
+}
+
+html::-webkit-scrollbar {
+  width: 10px;
+}
+
+html::-webkit-scrollbar-track {
+  background: rgba(15, 13, 10, 0.95);
+}
+
+html::-webkit-scrollbar-thumb {
+  background: rgba(139, 115, 85, 0.4);
+  border-radius: 5px;
+  border: 2px solid rgba(15, 13, 10, 0.95);
+}
+
+html::-webkit-scrollbar-thumb:hover {
+  background: rgba(139, 115, 85, 0.6);
+}
+
+html::-webkit-scrollbar-thumb:active {
+  background: rgba(196, 167, 125, 0.5);
+}
+
 /* Vintage paper texture */
 .paper-texture {
   background: var(--paper);

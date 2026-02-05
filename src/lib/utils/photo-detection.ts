@@ -24,16 +24,20 @@ export async function checkPhotoInFrame(frameData: string): Promise<PhotoDetecti
       }),
     });
 
+    if (!response.ok) {
+      console.error('[checkPhotoInFrame] API error:', response.status, response.statusText);
+      return { hasPhoto: false, allCornersVisible: false };
+    }
+
     const data = await response.json();
     const answer = data.response?.toUpperCase().trim() || '';
     
-    // Parse the response
     const hasPhoto = answer.includes('PHOTO:YES');
     const allCornersVisible = answer.includes('CORNERS:YES');
     
     return { hasPhoto, allCornersVisible };
   } catch (error) {
-    console.error('Error checking photo in frame:', error);
+    console.error('[checkPhotoInFrame] Error:', error);
     return { hasPhoto: false, allCornersVisible: false };
   }
 }

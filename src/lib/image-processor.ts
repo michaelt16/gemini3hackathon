@@ -160,28 +160,65 @@ async function cropImageWithBoundingBox(
 }
 
 /**
- * Try to extract full-frame photo using Gemini 2.5 Flash Image (Nano Banana)
+ * Center-crop fallback when bbox detection fails (matches scan frame ~70% x 62%)
+ */
+async function centerCropFallback(imageBase64: string): Promise<string | null> {
+  try {
+    const sharp = (await import('sharp')).default;
+    const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+    const imageBuffer = Buffer.from(cleanBase64, 'base64');
+    const metadata = await sharp(imageBuffer).metadata();
+    const imgWidth = metadata.width || 1000;
+    const imgHeight = metadata.height || 1000;
+    const cropRatioW = 0.7;
+    const cropRatioH = 0.62;
+    const width = Math.round(imgWidth * cropRatioW);
+    const height = Math.round(imgHeight * cropRatioH);
+    const x = Math.round((imgWidth - width) / 2);
+    const y = Math.round((imgHeight - height) / 2);
+    const croppedBuffer = await sharp(imageBuffer)
+      .extract({ left: Math.max(0, x), top: Math.max(0, y), width: Math.min(width, imgWidth), height: Math.min(height, imgHeight) })
+      .jpeg({ quality: 90 })
+      .toBuffer();
+    return `data:image/jpeg;base64,${croppedBuffer.toString('base64')}`;
+  } catch (error) {
+    console.error('Center crop fallback failed:', error);
+    return null;
+  }
+}
+
+/**
+ * Try to extract full-frame photo using Gemini 2.0 Flash with native image output (Nano Banana)
+ * This is the preferred method - produces clean, full-frame photos
  */
 async function extractWithNanoBanana(imageBase64: string): Promise<string | null> {
+  console.log('🍌 [Nano Banana] Starting extraction attempt...');
+  
   try {
-    // Try using Gemini 2.5 Flash Image for image editing
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash-exp' });
+    // Use Gemini model with image output capability
+    const model = genAI.getGenerativeModel({ 
+      model: 'gemini-2.0-flash-preview-image-generation',
+      generationConfig: {
+        // @ts-ignore - responseModalities enables native image output
+        responseModalities: ['IMAGE', 'TEXT'],
+      }
+    });
     
-    const prompt = `Extract and create a full-frame, clean version of ONLY the photograph itself.
+    const prompt = `You are a photo scanner. Extract ONLY the physical photograph from this camera image.
 
-Remove:
-- All background (table, surface, hands, fingers, thumbs)
-- Any uneven edges or borders
-- Any artifacts or distractions
+CRITICAL REQUIREMENTS:
+1. Output ONLY the photograph content as an image
+2. Remove ALL hands, fingers, thumbs completely
+3. Remove ALL background (table, surface, wall, etc.)
+4. Remove any photo frame or border
+5. Straighten the photo if it's tilted
+6. Fill the entire output with just the clean photograph
+7. Make it look like a professional digital scan
 
-Requirements:
-- Straighten the photo if tilted
-- Make it look like a professional scan
-- Preserve original content, colors, and quality
-- Output should be a clean, full-frame photograph
+The output must be a clean, properly oriented image of just the photograph content.`;
 
-Return the extracted photo as an image.`;
-
+    console.log('🍌 [Nano Banana] Sending request to Gemini with IMAGE modality...');
+    
     const result = await model.generateContent([
       {
         inlineData: {
@@ -193,17 +230,42 @@ Return the extracted photo as an image.`;
     ]);
 
     const response = await result.response;
-    const parts = response.candidates?.[0]?.content?.parts || [];
+    const candidates = response.candidates || [];
+    console.log('🍌 [Nano Banana] Response received, candidates:', candidates.length);
+    
+    if (candidates.length === 0) {
+      console.log('🍌 [Nano Banana] No candidates in response');
+      return null;
+    }
+    
+    const parts = candidates[0]?.content?.parts || [];
+    console.log('🍌 [Nano Banana] Parts in response:', parts.length, 
+      parts.map((p: any) => p.inlineData ? `image/${p.inlineData.mimeType}` : (p.text ? 'text' : 'unknown')));
     
     for (const part of parts) {
       if (part.inlineData && part.inlineData.mimeType?.startsWith('image/')) {
+        console.log('🍌 [Nano Banana] ✅ SUCCESS! Got image output, size:', 
+          part.inlineData.data?.length || 0, 'bytes');
         return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
       }
     }
     
+    // Check if we got text instead of image
+    const textParts = parts.filter((p: any) => p.text);
+    if (textParts.length > 0) {
+      console.log('🍌 [Nano Banana] ⚠️ Got text response instead of image:', 
+        textParts[0].text?.substring(0, 100));
+    }
+    
+    console.log('🍌 [Nano Banana] No image found in response parts');
     return null;
-  } catch (error) {
-    console.log('Nano Banana extraction not available, using analysis method');
+  } catch (error: any) {
+    console.log('🍌 [Nano Banana] ❌ FAILED:', error?.message || error);
+    console.log('🍌 [Nano Banana] Error details:', {
+      name: error?.name,
+      code: error?.code,
+      status: error?.status,
+    });
     return null;
   }
 }
@@ -376,103 +438,100 @@ async function extractFullFrameWithCorrection(
 }
 
 /**
- * Process a scanned photo: extract full-frame, clean photo
- * @param imageBase64 - Base64 encoded image (with or without data URL prefix)
- * @returns Processed image as base64
+ * Quick draft crop - uses bounding box detection + crop (no Nano Banana)
+ * Fast for initial capture, user can upgrade to Nano Banana later
  */
-export async function processScannedPhoto(
+export async function processDraftPhoto(
   imageBase64: string
 ): Promise<ProcessedImage> {
+  console.log('═══════════════════════════════════════════════════════════');
+  console.log('📸 DRAFT PHOTO PROCESSING (Quick Crop)');
+  console.log('═══════════════════════════════════════════════════════════');
+  
   if (!GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY not configured');
   }
 
-  // Clean base64 string
   const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+  console.log('📦 Input image size:', Math.round(cleanBase64.length / 1024), 'KB');
 
-  console.log('🖼️ Extracting full-frame photo with Nano Banana...');
+  // Try bounding box detection + crop
+  const bbox = await getPhotoBoundingBox(imageBase64);
   
-  // Step 1: Try Nano Banana (Gemini 2.5 Flash Image) for direct extraction
-  const nanoBananaResult = await extractWithNanoBanana(imageBase64);
-  
-  if (nanoBananaResult) {
-    console.log('✅ Full-frame photo extracted with Nano Banana');
-    const extractedBase64 = nanoBananaResult.replace(/^data:image\/\w+;base64,/, '');
-    return {
-      imageBase64: extractedBase64,
-      mimeType: 'image/jpeg',
-      description: 'Full-frame photo extracted and cleaned with Nano Banana',
-    };
-  }
-  
-  console.log('⚠️ Nano Banana extraction not available, using analysis method...');
-  console.log('🖼️ Analyzing photo for full-frame extraction...');
-  
-  // Step 2: Get detailed analysis (bounding box, rotation, perspective)
-  const analysis = await analyzePhotoForExtraction(imageBase64);
-  
-  if (!analysis) {
-    console.log('⚠️ Could not analyze photo, falling back to basic detection...');
-    
-    // Fallback to basic bounding box detection
-    const bbox = await getPhotoBoundingBox(imageBase64);
-    
-    if (!bbox) {
-      console.log('Could not detect photo boundaries, using original');
-      return {
-        imageBase64: cleanBase64,
-        mimeType: 'image/jpeg',
-        description: 'Original image (could not process)',
-      };
-    }
-    
-    // Use basic cropping
+  if (bbox) {
+    console.log('✅ Photo detected, cropping...');
     const croppedImage = await cropImageWithBoundingBox(imageBase64, bbox);
     const croppedBase64 = croppedImage.replace(/^data:image\/\w+;base64,/, '');
     
     return {
       imageBase64: croppedBase64,
       mimeType: 'image/jpeg',
-      description: 'Photo cropped',
+      description: 'Draft photo cropped',
       boundingBox: bbox,
     };
   }
-
-  console.log('📐 Photo analysis complete:', {
-    bbox: analysis.bbox,
-    rotation: analysis.rotation,
-    hasPerspective: !!analysis.perspective,
-  });
   
-  // Step 2: Extract full-frame with perspective correction and enhancement
-  console.log('✂️ Extracting full-frame photo with corrections...');
-  
-  try {
-    const extractedImage = await extractFullFrameWithCorrection(imageBase64, analysis);
-    const extractedBase64 = extractedImage.replace(/^data:image\/\w+;base64,/, '');
-    
-    console.log('✅ Full-frame photo extracted and cleaned');
-    
-    return {
-      imageBase64: extractedBase64,
-      mimeType: 'image/jpeg',
-      description: 'Full-frame photo extracted, straightened, and enhanced',
-      boundingBox: analysis.bbox,
-    };
-  } catch (error) {
-    console.error('Full-frame extraction failed, using basic crop:', error);
-    
-    // Fallback to basic cropping
-    const croppedImage = await cropImageWithBoundingBox(imageBase64, analysis.bbox);
-    const croppedBase64 = croppedImage.replace(/^data:image\/\w+;base64,/, '');
-    
+  // Fallback to center crop
+  console.log('⚠️ No bbox detected, using center crop fallback');
+  const centerCropped = await centerCropFallback(imageBase64);
+  if (centerCropped) {
+    const croppedBase64 = centerCropped.replace(/^data:image\/\w+;base64,/, '');
     return {
       imageBase64: croppedBase64,
       mimeType: 'image/jpeg',
-      description: 'Photo cropped (full extraction failed)',
-      boundingBox: analysis.bbox,
+      description: 'Draft photo center-cropped',
     };
   }
+  
+  // Return original if all else fails
+  return {
+    imageBase64: cleanBase64,
+    mimeType: 'image/jpeg',
+    description: 'Original (no crop possible)',
+  };
+}
+
+/**
+ * Full Nano Banana extraction - produces clean full-frame photo
+ * Called manually by user after reviewing draft
+ */
+export async function processWithNanoBanana(
+  imageBase64: string
+): Promise<ProcessedImage> {
+  console.log('═══════════════════════════════════════════════════════════');
+  console.log('🍌 NANO BANANA EXTRACTION');
+  console.log('═══════════════════════════════════════════════════════════');
+  
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY not configured');
+  }
+
+  const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
+  console.log('📦 Input image size:', Math.round(cleanBase64.length / 1024), 'KB');
+
+  const nanoBananaResult = await extractWithNanoBanana(imageBase64);
+  
+  if (nanoBananaResult) {
+    console.log('✅ SUCCESS: Full-frame photo extracted with Nano Banana!');
+    const extractedBase64 = nanoBananaResult.replace(/^data:image\/\w+;base64,/, '');
+    return {
+      imageBase64: extractedBase64,
+      mimeType: 'image/jpeg',
+      description: 'Full-frame photo extracted with Nano Banana',
+    };
+  }
+  
+  console.log('❌ Nano Banana failed');
+  throw new Error('Nano Banana extraction failed');
+}
+
+/**
+ * Legacy function - now calls processDraftPhoto for initial capture
+ */
+export async function processScannedPhoto(
+  imageBase64: string
+): Promise<ProcessedImage> {
+  return processDraftPhoto(imageBase64);
 }
 
 /**

@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useSidebar } from '@/contexts/SidebarContext';
+import { useCreateAlbum } from '@/contexts/CreateAlbumContext';
 
 // SVG Icons
 const AlbumIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
@@ -60,14 +61,14 @@ export default function AlbumSidebar() {
               <AlbumIcon className="w-6 h-6 flex-shrink-0" />
               {isExpanded && <span className="text-sm font-medium">Albums</span>}
             </Link>
-            <Link
-              href="/capture"
-              className={`flex items-center gap-4 px-4 py-3.5 rounded-xl text-amber-200/50 hover:text-amber-100 hover:bg-white/5 transition-all ${isExpanded ? '' : 'justify-center'}`}
-              title="Capture"
+            <button
+              onClick={openCreateAlbum}
+              className={`flex items-center gap-4 px-4 py-3.5 rounded-xl text-amber-200/50 hover:text-amber-100 hover:bg-white/5 transition-all w-full ${isExpanded ? '' : 'justify-center'}`}
+              title="Create album"
             >
               <CameraIcon className="w-6 h-6 flex-shrink-0" />
-              {isExpanded && <span className="text-sm font-medium">Capture</span>}
-            </Link>
+              {isExpanded && <span className="text-sm font-medium">Create album</span>}
+            </button>
             
             <div className="my-6" style={{ borderTop: '1px solid rgba(180, 140, 100, 0.1)' }} />
             
@@ -87,14 +88,14 @@ export default function AlbumSidebar() {
                 className="w-10 h-10 rounded-full flex items-center justify-center text-amber-100 text-sm font-medium flex-shrink-0"
                 style={{ background: 'rgba(255, 251, 235, 0.1)' }}
               >
-                U
-              </div>
+                  U
+                </div>
               {isExpanded && (
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium text-amber-100 truncate">User</p>
                   <p className="text-xs text-amber-200/40 truncate">user@example.com</p>
-                </div>
-              )}
+              </div>
+            )}
             </div>
           </div>
         </div>

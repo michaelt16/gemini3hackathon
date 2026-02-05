@@ -78,12 +78,12 @@ export async function cloneVoice(
 /**
  * Generate TTS audio using Google Cloud TTS (free, pre-built voices)
  * @param text - Text to convert to speech
- * @param voiceName - Voice name (e.g., 'en-US-Neural2-D' for natural male voice)
+ * @param voiceName - Voice name (e.g., 'en-US-Studio-O' for natural narration)
  * @returns Audio buffer (MP3)
  */
 export async function generateTTSGoogle(
   text: string,
-  voiceName: string = 'en-US-Neural2-D'
+  voiceName: string = 'en-US-Studio-O'
 ): Promise<Buffer> {
   if (!GOOGLE_CLOUD_API_KEY) {
     throw new Error('GOOGLE_CLOUD_API_KEY not configured');

@@ -32,8 +32,8 @@ export function detectMotion(currentFrame: string, previousFrame: string | null)
   }
   const similarity = matches / minLength;
   
-  // Only consider it motion if similarity is below 90% (allows for slight hand movement)
-  const hasSignificantMotion = similarity < 0.90;
+  // Only consider it motion if similarity is below 70% (JPEG encoding varies, so be lenient)
+  const hasSignificantMotion = similarity < 0.70;
   
   return { hasMotion: hasSignificantMotion, newPreviousFrame: currentFrame };
 }

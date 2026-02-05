@@ -1,35 +1,25 @@
 'use client';
 
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useState, useEffect } from 'react';
-
-const SearchIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-  </svg>
-);
-
-const PlusIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
-  </svg>
-);
-
-const BellIcon = () => (
-  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M14.857 17.082a23.848 23.848 0 005.454-1.31A8.967 8.967 0 0118 9.75v-.7V9A6 6 0 006 9v.75a8.967 8.967 0 01-2.312 6.022c1.733.64 3.56 1.085 5.455 1.31m5.714 0a24.255 24.255 0 01-5.714 0m5.714 0a3 3 0 11-5.714 0" />
-  </svg>
-);
+import { SidebarProvider } from '@/contexts/SidebarContext';
+import { useUserName } from '@/hooks/use-user-name';
+import { CreateAlbumProvider } from '@/contexts/CreateAlbumContext';
+import CreateAlbumModal from '@/components/CreateAlbumModal';
 
 const ChevronDownIcon = () => (
-  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+  <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
     <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
   </svg>
 );
 
 function NavigationContent({ children }: { children: React.ReactNode }) {
+  const pathname = usePathname();
+  const { userName, avatarLetter } = useUserName();
   const [scrolled, setScrolled] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
+  const [questionCount, setQuestionCount] = useState(0);
 
   useEffect(() => {
     const handleScroll = () => {
@@ -38,6 +28,29 @@ function NavigationContent({ children }: { children: React.ReactNode }) {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
+
+  // Fetch question count
+  useEffect(() => {
+    async function fetchQuestionCount() {
+      try {
+        const res = await fetch('/api/prompts');
+        if (res.ok) {
+          const data = await res.json();
+          setQuestionCount(data.prompts?.length || 0);
+        }
+      } catch (e) {
+        console.error('Failed to fetch question count:', e);
+      }
+    }
+    fetchQuestionCount();
+  }, [pathname]); // Refresh when navigating
+
+  const isActive = (path: string) => {
+    if (path === '/album') {
+      return pathname === '/album' || pathname?.startsWith('/album/');
+    }
+    return pathname === path;
+  };
 
   return (
     <div className="min-h-screen flex flex-col" style={{ background: '#0d0b09' }}>
@@ -55,9 +68,9 @@ function NavigationContent({ children }: { children: React.ReactNode }) {
           borderBottom: scrolled ? '1px solid rgba(255,255,255,0.05)' : 'none'
         }}
       >
-        <div className="flex items-center justify-between h-[68px] px-4 md:px-10">
+        <div className="flex items-center justify-between h-[88px] md:h-[96px] px-4 md:px-10">
           {/* Left - Logo & Nav */}
-          <div className="flex items-center gap-8">
+          <div className="flex items-center gap-10">
             <Link 
               href="/" 
               className="flex items-center hover:opacity-80 transition-opacity"
@@ -65,66 +78,70 @@ function NavigationContent({ children }: { children: React.ReactNode }) {
               <img 
                 src="/livingmemory.png" 
                 alt="Living Memory" 
-                className="h-10 md:h-12 w-auto object-contain"
+                className="h-16 w-16 md:h-24 md:w-24 lg:h-28 lg:w-28 object-contain"
               />
             </Link>
             
             {/* Nav Links */}
-            <nav className="hidden md:flex items-center gap-6">
+            <nav className="hidden md:flex items-center gap-2">
               <Link 
                 href="/album" 
-                className="text-sm font-medium text-white hover:text-white/70 transition-colors"
+                className={`px-5 py-2.5 rounded-xl text-base font-medium transition-all flex items-center gap-2.5 ${
+                  isActive('/album') 
+                    ? 'text-white bg-white/10' 
+                    : 'text-white/70 hover:text-white hover:bg-white/5'
+                }`}
               >
-                Memories
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                </svg>
+                Albums
               </Link>
               <Link 
-                href="/capture" 
-                className="text-sm text-white/70 hover:text-white transition-colors"
+                href="/questions" 
+                className={`px-5 py-2.5 rounded-xl text-base font-medium transition-all flex items-center gap-2.5 ${
+                  isActive('/questions') 
+                    ? 'text-white bg-white/10' 
+                    : 'text-white/70 hover:text-white hover:bg-white/5'
+                }`}
               >
-                Capture
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M8.625 12a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H8.25m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0H12m4.125 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm0 0h-.375M21 12c0 4.556-4.03 8.25-9 8.25a9.764 9.764 0 01-2.555-.337A5.972 5.972 0 015.41 20.97a5.969 5.969 0 01-.474-.065 4.48 4.48 0 00.978-2.025c.09-.457-.133-.901-.467-1.226C3.93 16.178 3 14.189 3 12c0-4.556 4.03-8.25 9-8.25s9 3.694 9 8.25z" />
+                </svg>
+                Questions
+                {questionCount > 0 && (
+                  <span className="px-2 py-0.5 rounded-full bg-cyan-500/20 text-cyan-400 text-xs font-semibold">
+                    {questionCount}
+                  </span>
+                )}
               </Link>
               <Link 
-                href="#" 
-                className="text-sm text-white/70 hover:text-white transition-colors"
+                href="/family" 
+                className={`px-5 py-2.5 rounded-xl text-base font-medium transition-all flex items-center gap-2.5 ${
+                  isActive('/family') 
+                    ? 'text-white bg-white/10' 
+                    : 'text-white/70 hover:text-white hover:bg-white/5'
+                }`}
               >
-                People
+                <span className="text-2xl">🌳</span>
+                Family
               </Link>
             </nav>
           </div>
           
-          {/* Right - Actions */}
+          {/* Right - Profile */}
           <div className="flex items-center gap-4">
-            <button className="text-white/70 hover:text-white transition-colors">
-              <SearchIcon />
-            </button>
-            
-            <Link 
-              href="/capture"
-              className="hidden md:flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all text-white"
-              style={{ 
-                background: 'rgba(255,255,255,0.1)',
-                border: '1px solid rgba(255,255,255,0.15)'
-              }}
-            >
-              <PlusIcon />
-              New Memory
-            </Link>
-            
-            <button className="text-white/70 hover:text-white transition-colors hidden md:block">
-              <BellIcon />
-            </button>
-            
             {/* Profile */}
             <div className="relative">
               <button 
                 onClick={() => setProfileOpen(!profileOpen)}
-                className="flex items-center gap-2 group"
+                className="flex items-center gap-2.5 group"
               >
                 <div 
-                  className="w-8 h-8 rounded-md flex items-center justify-center text-white text-sm font-medium"
-                  style={{ background: 'linear-gradient(135deg, #8B7355 0%, #6B5344 100%)' }}
+                  className="w-10 h-10 rounded-full flex items-center justify-center text-white text-base font-medium"
+                  style={{ background: 'linear-gradient(135deg, #06b6d4 0%, #8b5cf6 100%)' }}
                 >
-                  U
+                  {avatarLetter}
                 </div>
                 <ChevronDownIcon />
               </button>
@@ -144,20 +161,22 @@ function NavigationContent({ children }: { children: React.ReactNode }) {
                     }}
                   >
                     <div className="px-4 py-2 border-b border-white/10">
-                      <p className="text-sm text-white font-medium">User</p>
+                      <p className="text-sm text-white font-medium">{userName}</p>
                       <p className="text-xs text-white/50">user@example.com</p>
                     </div>
                     <Link 
-                      href="#" 
+                      href="/profile" 
                       className="block px-4 py-2 text-sm text-white/70 hover:text-white hover:bg-white/5 transition-colors"
+                      onClick={() => setProfileOpen(false)}
                     >
-                      My Profile
+                      Profile & Settings
                     </Link>
                     <Link 
-                      href="#" 
+                      href="/family" 
                       className="block px-4 py-2 text-sm text-white/70 hover:text-white hover:bg-white/5 transition-colors"
+                      onClick={() => setProfileOpen(false)}
                     >
-                      Settings
+                      Manage Family
                     </Link>
                     <div className="border-t border-white/10 mt-2 pt-2">
                       <button className="block w-full text-left px-4 py-2 text-sm text-white/70 hover:text-white hover:bg-white/5 transition-colors">
@@ -185,5 +204,12 @@ export default function MainLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return <NavigationContent>{children}</NavigationContent>;
+  return (
+    <SidebarProvider>
+      <CreateAlbumProvider>
+        <NavigationContent>{children}</NavigationContent>
+        <CreateAlbumModal />
+      </CreateAlbumProvider>
+    </SidebarProvider>
+  );
 }

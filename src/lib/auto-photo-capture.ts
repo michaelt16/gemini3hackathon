@@ -148,13 +148,15 @@ ONLY output JSON.`;
 
 /**
  * Try to use Gemini's image generation to create a clean extracted photo
- * This is the "Nano Banana" approach
+ * This is the "Nano Banana" approach - requires responseModalities: ['IMAGE', 'TEXT']
  */
 async function extractWithImageGeneration(imageBase64: string): Promise<string | null> {
+  console.log('🍌 [auto-capture] Trying Nano Banana extraction...');
+  
   try {
-    // Try using a model that supports image output
+    // Use Gemini model with image output capability
     const model = genAI.getGenerativeModel({ 
-      model: 'gemini-2.0-flash-exp',
+      model: 'gemini-2.0-flash-preview-image-generation',
       generationConfig: {
         // @ts-ignore - responseModalities may not be in types yet
         responseModalities: ['IMAGE', 'TEXT'],
@@ -187,17 +189,22 @@ Fill the entire output with just the photo.`;
     const response = await result.response;
     const parts = response.candidates?.[0]?.content?.parts || [];
 
+    console.log('🍌 [auto-capture] Response parts:', parts.length, 
+      parts.map((p: any) => p.inlineData ? 'image' : (p.text ? 'text' : 'unknown')));
+
     for (const part of parts) {
       // @ts-ignore - inlineData type
       if (part.inlineData && part.inlineData.mimeType?.startsWith('image/')) {
+        console.log('🍌 [auto-capture] ✅ Got image output!');
         // @ts-ignore
         return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
       }
     }
 
+    console.log('🍌 [auto-capture] No image in response');
     return null;
-  } catch (error) {
-    console.log('Image generation extraction not available');
+  } catch (error: any) {
+    console.log('🍌 [auto-capture] ❌ Nano Banana failed:', error?.message || error);
     return null;
   }
 }

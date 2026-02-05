@@ -175,19 +175,21 @@ CREATE TABLE messages (
 );
 
 -- Photo Stories (extracted from conversations)
+-- NOTE: Stores facts + summary, NOT narration. Narration generated at album assembly.
 CREATE TABLE photo_stories (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   photo_id UUID REFERENCES photos(id),
   
-  -- Extracted facts
+  -- Extracted facts (structured, filtered from conversation)
   who_facts JSONB,                 -- ["Grandpa Bob", "Tommy"]
   what_facts JSONB,                -- ["fishing trip", "first catch"]
   when_facts JSONB,                -- ["summer 2024", "early morning"]
   where_facts JSONB,               -- ["Lake Tahoe", "the old dock"]
   why_facts JSONB,                 -- ["annual tradition", "teaching moment"]
   
-  -- Generated content
-  generated_story TEXT,            -- Individual photo narrative
+  -- Summary & metadata (NOT narration - that comes at album assembly)
+  conversation_summary TEXT,       -- Clean summary of what user said (no filler)
+  emotional_tone JSONB,            -- ["proud", "nostalgic", "joyful"]
   completeness_score INTEGER,      -- 0-100%
   
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -392,34 +394,68 @@ CREATE TABLE jobs (
 
 ### 2. Story Generation Pipeline
 
-**Hybrid Approach** (generate now, refine later):
+**Two-Layer Approach** (facts now, narration at assembly):
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  DURING CONVERSATION                                     │
+│  LAYER 1: PER-PHOTO (After Conversation)                │
 ├─────────────────────────────────────────────────────────┤
-│  AI tracks "story completeness":                         │
-│  ├── Who is in the photo? ✓ (extracted)                 │
-│  ├── When was it taken? ✓ (extracted)                   │
-│  ├── Where? ✗ (missing)                                 │
-│  ├── What happened? ✓ (extracted)                       │
-│  └── Why is it meaningful? ✗ (missing)                  │
 │                                                          │
-│  Display to user: "Story 60% complete"                  │
+│  Raw Conversation                                        │
+│       ↓                                                 │
+│  FACT EXTRACTION (filter filler, extract substance)     │
+│       ↓                                                 │
+│  Structured Facts:                                       │
+│  ├── who: ["Grandpa", "Tommy"]                          │
+│  ├── what: ["fishing trip", "first catch"]              │
+│  ├── when: ["summer 2024"]  ← or null if unknown        │
+│  ├── where: ["Lake Tahoe"]  ← or null if unknown        │
+│  ├── why: ["annual tradition"]                          │
+│  └── emotions: ["proud", "nostalgic"]                   │
+│                                                          │
+│  Conversation Summary (clean, no filler):                │
+│  "User shared this is Grandpa teaching Tommy to fish.   │
+│   Tommy caught his first fish. Annual tradition they've │
+│   kept for years. User emotional about passing down."   │
+│                                                          │
+│  Completeness: 80% (4/5 categories filled)              │
+│                                                          │
+│  ✓ NO NARRATION YET - just raw ingredients              │
+│                                                          │
 ├─────────────────────────────────────────────────────────┤
-│  AFTER CONVERSATION                                      │
+│  LAYER 2: ALBUM-LEVEL (At Album Assembly)                │
 ├─────────────────────────────────────────────────────────┤
-│  Generate DRAFT story (even if incomplete)              │
-│  Mark gaps: "[Location unknown]"                        │
-│  User can return later to fill gaps                     │
-├─────────────────────────────────────────────────────────┤
-│  AT ALBUM ASSEMBLY                                       │
-├─────────────────────────────────────────────────────────┤
-│  AI can infer missing details from album context:       │
-│  "Photo B mentions Lake Tahoe, Photo A looks like       │
-│   the same trip → probably Lake Tahoe too"              │
+│                                                          │
+│  User orders photos: [Photo B] → [Photo A] → [Photo C]  │
+│       ↓                                                 │
+│  AI sees ALL photos + their facts + summaries           │
+│       ↓                                                 │
+│  NARRATION GENERATION (one unified pass)                │
+│       ↓                                                 │
+│  Order-aware script:                                     │
+│                                                          │
+│  [0:00-0:07] Photo B (opening)                          │
+│  "The adventure began on Grandpa's boat..."             │
+│                                                          │
+│  [0:07-0:14] Photo A (middle - transition)              │
+│  "After docking, Tommy couldn't wait..."                │
+│                                                          │
+│  [0:14-0:21] Photo C (closing)                          │
+│  "As the sun set, we knew this day..."                  │
+│                                                          │
+│  ✓ Transitions adapt based on order                     │
+│  ✓ Cross-photo inference (fill missing details)         │
+│  ✓ Consistent voice/style across entire album           │
+│  ✓ Opening/middle/closing narrative structure           │
+│                                                          │
 └─────────────────────────────────────────────────────────┘
 ```
+
+**Why Two Layers?**
+- **No wasted work** — narration generated once when order is final
+- **Full context** — AI sees all photos at once for better coherence
+- **Better inference** — "Photo B mentions Lake Tahoe → Photo A probably same trip"
+- **Handles incomplete gracefully** — missing details inferred from album context
 
 ### 3. Animation Strategy
 
@@ -899,43 +935,245 @@ ORDER BY p.taken_at ASC;  -- Default: chronological, user can reorder
 
 ## 📅 Implementation Phases
 
-### Phase 1: Foundation (Current)
+> **Principle:** Follow the user journey end-to-end first (MVP), then enhance.
+> 
+> **User Journey:** Capture → Talk → Extract Facts → Order Photos → Narrate → Watch
+
+---
+
+### Phase 1: Capture & Conversation ✅ COMPLETE
+*Goal: User can scan photos and talk about them*
+
 - [x] Next.js app structure
 - [x] Gemini Live API integration
 - [x] Camera capture with 4-corner detection
 - [x] Nano Banana photo extraction
 - [x] Basic UI (capture + album modes)
-- [ ] Photo-conversation linking
-- [ ] Supabase integration
-- [ ] Album type selection (event vs person)
+- [x] Supabase integration (events CRUD, schema, capture/album wired to API)
+- [x] Photo upload to Supabase Storage + `photos` table (photo–event linking)
+- [x] Photo-conversation linking (save transcript to `conversations`/`messages` when session ends)
 
-### Phase 2: Story Pipeline
-- [ ] Fact extraction from conversations
-- [ ] Story completeness scoring
-- [ ] Individual photo story generation
-- [ ] Person knowledge base
-- [ ] Context injection into Gemini Live
-- [ ] Person-based album photo selection (query photos by person_id)
-- [ ] Thematic narration generation (vs chronological)
+---
 
-### Phase 3: Animation & Media
-- [ ] Subtle animation (CSS/Canvas)
-- [ ] Veo integration for premium animation
-- [ ] Video storage in Supabase
+### Phase 2A: Capture Session Flow ✅ COMPLETE
+*Goal: Complete the capture UX — user can scan multiple photos, talk, and finish session*
 
-### Phase 4: Narration & Output
-- [ ] Order-aware narration script generation
-- [ ] TTS integration (Google Cloud / ElevenLabs)
-- [ ] Voice cloning (optional)
-- [ ] Video stitching
-- [ ] Final film export
+- [x] **"Finish Session" button** — Saves all conversations, navigates to album view
+- [x] **Photo status indicators** — Show which photos have been discussed (✓ discussed, 💬 current)
+- [x] **Track current photo** — Most recently captured photo is marked as "current"
+- [x] **Graceful disconnect** — Ensure all data saved before leaving
+- [ ] **Tap photo to switch context** — AI switches to selected photo (Post-MVP)
 
-### Phase 5: Polish
-- [ ] Face detection + manual tagging
-- [ ] Auto-suggest face matches
-- [ ] Cross-album context
-- [ ] Multi-contributor support
+*Key: Continuous mode — scan/talk freely until user taps "Finish Session"*
+
+---
+
+### Phase 2B: Fact Extraction (Background) ✅ COMPLETE
+*Goal: Extract structured facts from conversations (NO narration yet)*
+
+- [x] **Fact extraction API** — `/api/photos/[id]/extract-facts` extracts who/what/when/where/why
+- [x] **Conversation summary** — Clean summary generated, filters filler words
+- [x] **Completeness scoring** — Calculates % of 5 fact categories filled
+- [x] **Trigger on session end** — Runs extraction in background after "Finish Session"
+- [x] **Store in `photo_stories`** — Facts + summary stored per photo
+- [x] **UI indicator** — Album shows completeness bars + badges on photo cards
+- [x] **Photo detail modal** — Click photo to see full facts breakdown
+
+*Key: Store raw ingredients (facts/summary), NOT narration. Narration comes at assembly.*
+
+---
+
+### Phase 3: Album Ordering ✅ COMPLETE
+*Goal: User can reorder photos for their narrative*
+
+- [x] **Drag-drop photo reordering** — Horizontal timeline editor with drag-drop
+- [x] **Album preview** — See photos in order with summary snippets
+- [x] **"Ready for video" indicator** — Shows when 3+ photos in timeline
+- [x] **Order persistence** — `PUT /api/events/[id]/reorder` saves order to database
+- [x] **Timeline tab** — New tab on album page for editing order
+- [x] **Arrow controls** — Click-to-move for accessibility
+
+---
+
+### Phase 4: Order-Aware Narration ✅ COMPLETE
+*Goal: AI generates fitted narration based on photo order*
+
+- [x] **Narration generation API** — `POST /api/events/[id]/narration` takes all photos in order
+- [x] **Cross-photo inference** — AI fills missing details from album context
+- [x] **Transition awareness** — Opening/middle/closing structure, order-based transitions
+- [x] **Script segments** — Each segment ~20-25 words, fits 7-second clips
+- [x] **Script review UI** — NarrationEditor component with full script preview
+- [x] **Editable segments** — Click to edit any segment text manually
+- [x] **Regenerate single segment** — `PUT /api/events/[id]/narration/segment` with context awareness
+- [x] **Store in `album_narrations`** — `photo_order`, `script_segments`, `full_script`
+- [x] **"Narration" tab** — New tab on album page for editing narration
+
+**Bonus: Talk About Photo Later**
+- [x] **Photo chat API** — `POST /api/photos/[id]/chat` for simple text chat about a photo
+- [x] **Chat history** — `GET /api/photos/[id]/chat` retrieves previous messages
+- [x] **PhotoChatPanel** — Full-screen chat UI with photo side-by-side
+- [x] **"Tell Your Story" button** — Opens chat from photo modal in album page
+- [x] **Save Story** — Triggers fact extraction when done chatting
+
+*Key: One generation pass for entire album = consistent voice, coherent flow.*
+
+---
+
+### Phase 5: Audio & Animation ✅ COMPLETE
+*Goal: Photos come alive with animation + voice narration*
+
+- [x] **TTS API** — `POST /api/tts` using Google Cloud TTS REST API
+- [x] **Audio generation** — `POST /api/events/[id]/narration/audio` generates audio for all segments
+- [x] **Ken Burns animation** — `KenBurnsPhoto` component with mixed zoom/pan effects (randomized per photo)
+- [x] **Animation preview modal** — `AnimationPreviewModal` with full playback controls
+- [x] **Clickable preview** — Play button on photos in grid, modal, and timeline
+- [x] **Audio + animation sync** — Plays audio while animating each photo
+- [x] **Progress indicator** — Visual progress bar across segments
+- [x] **Store audio URLs** — Saved to `album_narrations.script_segments[].audio_url`
+- [x] **NarrationEditor update** — "Generate Audio" button and audio status indicators
+
+*Deferred: Veo premium animation, voice cloning*
+
+---
+
+### Phase 6: Video Output ✅ COMPLETE
+*Goal: User gets a shareable video*
+
+- [x] **Video stitching** — Canvas-based recording with MediaRecorder API
+- [x] **Ken Burns rendering** — Draws animated frames with zoom/pan effects
+- [x] **Narration overlay** — Text displayed at bottom of each frame
+- [x] **Audio sync** — Voice narration plays alongside animation
+- [x] **Progress indicator** — Real-time progress bar during export
+- [x] **Video preview** — Built-in video player to review before download
+- [x] **Download** — Download as .webm file
+- [x] **Store final video** — `POST /api/events/[id]/video` uploads to storage
+- [x] **"Generate Recap Video" button** — Integrated into album page actions
+
+---
+
+## 🎯 Post-MVP: Completed Enhancements
+
+### Phase 7: AI Animation ✅ COMPLETE
+*Goal: Photos come alive with AI-powered animation*
+
+- [x] **VEO 3 Integration** — `POST /api/animate-photo` with Gemini VEO 3
+- [x] **Grok Imagine Integration** — `POST /api/animate-photo-grok` alternative animation
+- [x] **Animation version management** — Multiple versions per photo (VEO 3 + Grok)
+- [x] **Version selection UI** — Switch between animation versions in inspector
+- [x] **Animation persistence** — `animation_versions` table stores all versions
+- [x] **Nano Banana crop in editor** — `POST /api/photos/[id]/enhance` for late cropping
+- [x] **Animated badge** — Photos show "Animated" tag in media pool and modal
+
+---
+
+### Phase 8: Album Editor ✅ COMPLETE  
+*Goal: Full-featured album editing experience*
+
+- [x] **Netflix-style album cards** — Swimlane layout with hover effects
+- [x] **Album settings modal** — Edit name, date, delete with confirmation
+- [x] **Media pool** — Scrollable, draggable photos with delete option
+- [x] **Timeline drag-drop** — Reorder clips, drag to/from media pool
+- [x] **Narration persistence** — Auto-save narration edits to database
+- [x] **Video export** — Full VideoExporter component with save to album
+- [x] **Export override** — New exports replace previous video (cache-busted URLs)
+- [x] **Film Ready tag** — Albums with exported video show badge
+
+---
+
+## 🚀 Hackathon Sprint: Enhancement Phases
+
+### Phase 9A: AI Companion "EVA" ✅ COMPLETE
+*Goal: Transform AI into memorable named companion*
+
+- [x] **Aurora orb** — Sticky bottom-right orb, Gemini-style glow + pulse
+- [x] **Hover interaction** — Orb pulses/glows on hover, scales up
+- [x] **Capture modal** — Click opens centered modal with full capture (camera + Tell Story)
+- [x] **EVA naming** — "Add Memory with EVA" and personality in copy
+- [x] **Modal layout** — Left: camera/gallery, Right: Gemini Live conversation
+- [x] **EVA personality** — Warm, conversational tone in AI system prompt
+
+*Completed!*
+
+📄 **Full spec**: See `docs/EVA_IMPLEMENTATION.md` for detailed design, layout, and future agent mode.
+
+---
+
+### Phase 9B: Voice Cloning 🎯 PLANNED
+*Goal: Narration sounds like the person, not robotic TTS*
+
+- [ ] **Voice sample upload** — UI to record/upload 30+ second sample
+- [ ] **ElevenLabs integration** — API to create voice clone
+- [ ] **Clone management** — Store voice clone ID per user/album
+- [ ] **Voice selection** — Choose cloned voice or default TTS
+- [ ] **Narration with clone** — Generate audio using cloned voice
+- [ ] **Fallback handling** — Graceful fallback if clone unavailable
+
+*Estimated: 1 day*
+
+---
+
+### Phase 9C: Better Question Quality 🎯 PLANNED
+*Goal: AI asks smarter, observation-based questions*
+
+- [ ] **Image analysis first** — Detect objects, people, setting, era clues
+- [ ] **Observation questions** — "I see candles on a cake - whose birthday?"
+- [ ] **Memory-aware framing** — "What do you know about..." vs "Do you remember..."
+- [ ] **Pivot on uncertainty** — "Who might remember this moment?"
+- [ ] **Context injection** — Use existing facts to inform questions
+- [ ] **Relationship focus** — Ask about connections, not just events
+
+*Estimated: 2-4 hours (prompt engineering)*
+
+---
+
+## 🔮 Future: Post-Hackathon Phases
+
+### Phase 10: Knowledge Base
+*Goal: Persistent AI memory across conversations*
+
+- [ ] Person knowledge base (link names → `people` table)
+- [ ] Vector storage for facts (pgvector or Pinecone)
+- [ ] RAG retrieval during conversations
+- [ ] Context injection (feed existing facts to Gemini Live)
+- [ ] Cross-album context sharing
+- [ ] Conflict resolution when facts contradict
+
+---
+
+### Phase 11: Multi-User & Collaboration
+*Goal: Family members contribute together*
+
+- [ ] User authentication/accounts
+- [ ] Album permissions (view, contribute, admin)
+- [ ] Multiple stories per photo (different perspectives)
+- [ ] Combined recap showing all perspectives
+- [ ] Shared album invitations
+- [ ] Activity feed for contributions
+
+---
+
+### Phase 12: Premium Features
+*Goal: Advanced customization options*
+
+- [ ] Custom scrapbook builder (drag-drop layout)
+- [ ] Immortalized calligraphy (handwriting fonts)
+- [ ] Family tree detection from conversations
+- [ ] Face detection + auto-tagging
+- [ ] Memory timeline visualization
+- [ ] Music/soundtrack generation
+
+---
+
+### Phase 13: Polish & Scale
+*Goal: Production-ready quality*
+
 - [ ] Mobile optimization
+- [ ] Duplicate photo detection
+- [ ] Batch photo import
+- [ ] Storage cost optimization
+- [ ] Offline mode
+- [ ] Multi-language support
+- [ ] Photo restoration (AI enhancement)
 
 ---
 
@@ -1363,6 +1601,229 @@ ORDER BY p.taken_at ASC;  -- Default: chronological, user can reorder
 13. Advanced permissions
 14. Legacy/inheritance features
 15. Commercial use options
+
+---
+
+## Post-MVP Feature Ideas
+
+### Hackathon Priority Features (Recommended)
+
+#### 1. AI Companion "EVA" / "The Guide"
+**Status**: ✅ RECOMMENDED FOR HACKATHON
+
+**Concept**: Transform the AI from a generic assistant into a named, personified companion with emotional presence. Inspired by the "Eulogy" episode of Black Mirror.
+
+**Implementation Details**:
+- Name the AI "EVA" (or "The Guide") throughout the app
+- Add floating aurora/animated UI effect (like Gemini's visual presence)
+- Interactive hover states that make EVA feel "alive"
+- Convert capture from separate page (`/capture/id`) to modal overlay on `/album/[id]`
+- Give EVA a personality with intro messages and contextual responses
+
+**Why High Priority**:
+- Extremely high demo visibility - judges see it immediately
+- Transforms "photo app" into "AI companion experience"
+- Relatively low implementation effort (1-2 days)
+- Memorable branding for hackathon presentation
+
+**Technical Approach**:
+- CSS animations for aurora effect
+- Framer Motion for interactive animations
+- Modal component for capture flow
+- Consistent naming/personality in all AI responses
+
+---
+
+#### 2. Voice Cloning for Narration
+**Status**: ✅ RECOMMENDED FOR HACKATHON
+
+**Concept**: Use voice cloning (ElevenLabs) so narration sounds like the person telling the story, not robotic TTS.
+
+**Implementation Details**:
+- User uploads voice sample (30 seconds minimum)
+- ElevenLabs creates voice clone
+- Narration generated using cloned voice
+- Option to use default voice or cloned voice per album
+
+**Why High Priority**:
+- Massive emotional impact - hearing "grandma" narrate her own story
+- Clear demo moment that creates emotional response
+- Medium implementation effort (1 day with ElevenLabs API)
+- Schema already has `voice_clone_id` fields ready
+
+**Technical Approach**:
+- ElevenLabs API integration
+- Voice sample upload/storage in Supabase
+- Voice selection UI in album settings
+- Fallback to default TTS if no clone available
+
+---
+
+#### 3. Better Question Quality (Prompt Engineering)
+**Status**: ✅ RECOMMENDED FOR HACKATHON
+
+**Concept**: Improve AI conversation quality by making observations about the image rather than assuming user remembers everything.
+
+**Current Problem**:
+- AI asks "Do you remember when this was?" for childhood photos
+- User often doesn't remember details from when they were young
+- Questions don't leverage visual observations from the image
+
+**Improved Approach**:
+- Analyze image first: objects, people count, setting, era clues, clothing, decorations
+- Generate observation-based questions: "I see candles on a cake - whose birthday was this?"
+- If user says "I don't remember", pivot to: "Who might remember this moment?"
+- Contextual awareness: ask about relationships, not just events
+- Frame questions as "What do you know about..." rather than "Do you remember..."
+
+**Why High Priority**:
+- Low effort (prompt engineering only, 2-4 hours)
+- Improves quality of every demo conversation
+- Shows sophisticated AI understanding
+- No infrastructure changes needed
+
+---
+
+### Future Feature Ideas (Post-Hackathon)
+
+#### 4. Knowledge Base Implementation
+**Status**: 🔮 FUTURE (Not for hackathon)
+
+**Concept**: Persistent memory across conversations and albums. AI remembers facts about people, places, and relationships.
+
+**Why Deferred**:
+- Not visible in short demo
+- Requires vector DB, embedding pipeline
+- Medium-hard implementation
+- Benefits emerge over long-term use
+
+**Implementation Notes**:
+- Vector storage for facts (Pinecone, Supabase pgvector)
+- RAG retrieval during conversations
+- Cross-album fact sharing
+- Conflict resolution when facts contradict
+
+---
+
+#### 5. Multi-User Accounts & Perspectives
+**Status**: 🔮 FUTURE (Not for hackathon)
+
+**Concept**: Multiple family members can contribute stories to the same photo. Different perspectives enrich the narrative.
+
+**Features**:
+- User authentication/accounts
+- Photo permissions (view, contribute, admin)
+- Multiple stories per photo from different users
+- Combined recap showing all perspectives
+- Admin controls timeline/album composition
+
+**Why Deferred**:
+- Very complex (3-5 days minimum)
+- Requires full auth system
+- Hard to demo in 2-3 minutes
+- High risk of bugs/edge cases
+
+---
+
+#### 6. Custom Scrapbook Builder
+**Status**: 🔮 FUTURE (Not for hackathon)
+
+**Concept**: Interactive scrapbook-style layout where users can arrange animated photos, add decorations, customize look and feel.
+
+**Features**:
+- Book-style page turning interface
+- Drag-and-drop photo placement
+- Decorative elements (stickers, frames, backgrounds)
+- Text annotations with custom fonts
+- Export as PDF or interactive digital book
+
+**Why Deferred**:
+- Very complex UI work (1-2 weeks)
+- High effort for presentation
+- Scope creep risk
+
+---
+
+#### 7. Immortalized Calligraphy
+**Status**: 🔮 FUTURE (Not for hackathon)
+
+**Concept**: Scan handwriting samples to create custom fonts. Stories displayed in the person's actual handwriting.
+
+**Features**:
+- Upload handwriting sample (journal page, letters)
+- AI generates custom font from handwriting
+- Per-user fonts for multi-user albums
+- Use handwriting font in scrapbook/titles
+
+**Why Deferred**:
+- Very hard ML problem (font generation)
+- High risk of poor quality results
+- Requires significant R&D
+- Cool concept but hard to execute well
+
+---
+
+#### 8. Memory Timeline Visualization
+**Status**: 🔮 FUTURE (Maybe for hackathon if time permits)
+
+**Concept**: Beautiful vertical timeline showing life's memories organized by date, expandable on hover.
+
+**Features**:
+- Vertical timeline component
+- Cluster albums by year/decade
+- Hover preview, click to expand
+- Visual representation of life's moments
+
+**Why Potentially Deferred**:
+- Albums may not have linear timelines (e.g., childhood memories with random undated photos)
+- Users may not remember exact dates
+- Could be confusing for non-chronological albums
+- Medium effort (4-6 hours) but uncertain UX value
+
+**Consideration**: Could work for dated albums, but would need graceful handling of albums without clear dates.
+
+---
+
+#### 9. Family Tree Detection
+**Status**: 🔮 FUTURE (Not for hackathon)
+
+**Concept**: AI builds family tree from conversations, detecting relationships and connecting people across photos.
+
+**Features**:
+- Extract relationships from conversations ("That's my grandmother")
+- Build visual family tree
+- Face recognition to connect people across albums
+- Knowledge base integration for persistent relationships
+- Auto-suggest relationships based on detected patterns
+
+**Why Deferred**:
+- Requires knowledge base first
+- Complex relationship modeling
+- Face recognition adds complexity
+- Very ambitious scope
+
+---
+
+### Post-MVP Priority Matrix
+
+| Feature | Effort | Wow Factor | Demo Visible | Risk | Hackathon? |
+|---------|--------|------------|--------------|------|------------|
+| AI Companion (EVA) | Medium | ⭐⭐⭐⭐⭐ | Very High | Low | ✅ YES |
+| Voice Cloning | Medium | ⭐⭐⭐⭐⭐ | Very High | Medium | ✅ YES |
+| Better Questions | Easy | ⭐⭐⭐ | Medium | Low | ✅ YES |
+| Knowledge Base | Hard | ⭐⭐ | Low | Medium | ❌ No |
+| Multi-User | Very Hard | ⭐⭐⭐ | Low | High | ❌ No |
+| Scrapbook | Very Hard | ⭐⭐⭐⭐ | High | High | ❌ No |
+| Calligraphy | Very Hard | ⭐⭐⭐⭐ | Medium | Very High | ❌ No |
+| Timeline View | Medium | ⭐⭐⭐ | High | Medium | ⚠️ Maybe |
+| Family Tree | Very Hard | ⭐⭐⭐⭐ | Medium | High | ❌ No |
+
+### Recommended Hackathon Sprint
+
+**Day 1 AM**: EVA naming + personality (all UI references, intro messages)
+**Day 1 PM**: Aurora floating UI effect (animated EVA button/avatar)
+**Day 2 AM**: Voice cloning integration (ElevenLabs)
+**Day 2 PM**: Better prompts + polish (improved questions, bug fixes)
 
 ---
 
