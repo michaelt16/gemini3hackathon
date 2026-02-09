@@ -105,12 +105,6 @@ export async function GET(
       .from('family_prompts')
       .select(`
         *,
-        album_members!from_member_id (
-          id,
-          name,
-          relationship,
-          avatar_color
-        ),
         photos!photo_id (
           id,
           thumbnail_url,

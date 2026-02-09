@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { GeminiLiveClient, getAuthToken } from '@/lib/gemini-live';
 import EVAOrb from '@/components/EVAOrb';
 import { AuroraWave } from '@/components/capture/AuroraWave';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface EVACompanionModalProps {
   isOpen: boolean;
@@ -17,6 +18,8 @@ interface EVACompanionModalProps {
  */
 export default function EVACompanionModal({ isOpen, onClose }: EVACompanionModalProps) {
   const router = useRouter();
+  const { theme } = useTheme();
+  const isLight = theme === 'light';
   
   // Connection states
   const [isConnected, setIsConnected] = useState(false);
@@ -221,22 +224,29 @@ Do NOT mention being an AI. Speak naturally as a caring companion. Keep it brief
   return (
     <div className="fixed inset-0 z-[100]">
       {/* Background */}
-      <div className="absolute inset-0 bg-black" />
+      <div className="absolute inset-0" style={{ background: isLight ? 'rgba(0,0,0,0.5)' : '#000' }} />
       
       {/* Modal container with rounded edges */}
-      <div className="absolute inset-4 md:inset-8 lg:inset-16 rounded-2xl overflow-hidden bg-gradient-to-b from-[#0a0a0f] to-[#0f0a15] border border-white/10 shadow-2xl flex flex-col">
+      <div 
+        className="absolute inset-4 md:inset-8 lg:inset-16 rounded-2xl overflow-hidden shadow-2xl flex flex-col"
+        style={{ 
+          background: isLight ? 'var(--bg-elevated)' : 'linear-gradient(to bottom, #0a0a0f, #0f0a15)',
+          border: `1px solid ${isLight ? 'var(--border-subtle)' : 'rgba(255,255,255,0.1)'}`,
+        }}
+      >
         
         {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-white/10">
+        <div className="flex items-center justify-between px-6 py-4" style={{ borderBottom: `1px solid ${isLight ? 'var(--border-subtle)' : 'rgba(255,255,255,0.1)'}` }}>
           <div className="flex items-center gap-3">
             <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500' : isConnecting ? 'bg-yellow-500 animate-pulse' : 'bg-white/30'}`} />
-            <span className="text-white/70 text-sm">
+            <span className="text-sm" style={{ color: isLight ? 'var(--text-secondary)' : 'rgba(255,255,255,0.7)' }}>
               {isConnecting ? 'Connecting...' : isConnected ? 'EVA' : 'EVA'}
             </span>
           </div>
           <button
             onClick={handleClose}
-            className="p-2 text-white/50 hover:text-white hover:bg-white/10 rounded-lg transition-all"
+            className="p-2 rounded-lg transition-all"
+            style={{ color: isLight ? 'var(--text-tertiary)' : 'rgba(255,255,255,0.5)' }}
           >
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
               <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -258,16 +268,16 @@ Do NOT mention being an AI. Speak naturally as a caring companion. Keep it brief
               {/* EVA's message */}
               <div className="text-center max-w-lg mb-10">
                 {status ? (
-                  <p className="text-white/50 text-sm">{status}</p>
+                  <p className="text-sm" style={{ color: isLight ? 'var(--text-tertiary)' : 'rgba(255,255,255,0.5)' }}>{status}</p>
                 ) : lastMessage ? (
                   <p 
-                    className="text-white text-xl leading-relaxed"
-                    style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+                    className="text-xl leading-relaxed"
+                    style={{ fontFamily: 'var(--font-crimson), Georgia, serif', color: isLight ? 'var(--text-primary)' : '#fff' }}
                   >
                     {lastMessage}
                   </p>
                 ) : (
-                  <p className="text-white/50 text-sm">
+                  <p className="text-sm" style={{ color: isLight ? 'var(--text-tertiary)' : 'rgba(255,255,255,0.5)' }}>
                     {isConnecting ? 'Waking up EVA...' : ''}
                   </p>
                 )}
@@ -283,7 +293,11 @@ Do NOT mention being an AI. Speak naturally as a caring companion. Keep it brief
                 </button>
                 <button
                   onClick={handleClose}
-                  className="px-8 py-4 bg-white/10 text-white/70 rounded-full font-medium tracking-wide hover:bg-white/20 hover:text-white transition-all"
+                  className="px-8 py-4 rounded-full font-medium tracking-wide transition-all"
+                  style={{ 
+                    background: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)',
+                    color: isLight ? 'var(--text-secondary)' : 'rgba(255,255,255,0.7)',
+                  }}
                 >
                   Maybe Later
                 </button>
@@ -300,8 +314,8 @@ Do NOT mention being an AI. Speak naturally as a caring companion. Keep it brief
               
               {/* Show EVA's response or default text */}
               <p 
-                className="text-white text-xl text-center mb-8 max-w-md"
-                style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+                className="text-xl text-center mb-8 max-w-md"
+                style={{ fontFamily: 'var(--font-crimson), Georgia, serif', color: isLight ? 'var(--text-primary)' : '#fff' }}
               >
                 {lastMessage || "What would you like to call this memory collection?"}
               </p>
@@ -313,14 +327,22 @@ Do NOT mention being an AI. Speak naturally as a caring companion. Keep it brief
                   onChange={(e) => setAlbumName(e.target.value)}
                   placeholder="Summer Vacation 2024..."
                   autoFocus
-                  className="w-full bg-transparent border-b-2 border-cyan-500/50 focus:border-cyan-400 text-white text-xl text-center py-4 outline-none placeholder-white/30 transition-colors"
-                  style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+                  className={`w-full bg-transparent border-b-2 text-xl text-center py-4 outline-none transition-colors ${isLight ? 'placeholder:text-[#9e9586]' : 'placeholder:text-white/30'}`}
+                  style={{ 
+                    fontFamily: 'var(--font-crimson), Georgia, serif',
+                    color: isLight ? 'var(--text-primary)' : '#fff',
+                    borderColor: isLight ? 'var(--eva-cyan)' : 'rgba(6,182,212,0.5)',
+                  }}
                 />
                 <div className="flex gap-4 justify-center">
                   <button
                     type="button"
                     onClick={() => setPhase('chat')}
-                    className="px-6 py-3 bg-white/10 text-white/70 rounded-full font-medium hover:bg-white/20 hover:text-white transition-all"
+                    className="px-6 py-3 rounded-full font-medium transition-all"
+                    style={{ 
+                      background: isLight ? 'rgba(0,0,0,0.06)' : 'rgba(255,255,255,0.1)',
+                      color: isLight ? 'var(--text-secondary)' : 'rgba(255,255,255,0.7)',
+                    }}
                   >
                     Back
                   </button>
@@ -344,13 +366,13 @@ Do NOT mention being an AI. Speak naturally as a caring companion. Keep it brief
               </div>
               
               <p 
-                className="text-white text-xl text-center mb-8"
-                style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+                className="text-xl text-center mb-8"
+                style={{ fontFamily: 'var(--font-crimson), Georgia, serif', color: isLight ? 'var(--text-primary)' : '#fff' }}
               >
                 {lastMessage || "Creating your album..."}
               </p>
               
-              <div className="w-48 h-1 bg-white/10 rounded-full overflow-hidden">
+              <div className="w-48 h-1 rounded-full overflow-hidden" style={{ background: isLight ? 'rgba(0,0,0,0.1)' : 'rgba(255,255,255,0.1)' }}>
                 <div className="h-full bg-gradient-to-r from-cyan-500 to-purple-500 loading-bar" />
               </div>
             </>

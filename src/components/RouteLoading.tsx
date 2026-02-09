@@ -43,7 +43,7 @@ export default function RouteLoading() {
       
       {/* Mini EVA Orb */}
       <div className="relative mb-4">
-        <EVAOrb size={80} isSpeaking={true} />
+        <EVAOrb size={96} isSpeaking={true} />
       </div>
       
       {/* Loading dots */}

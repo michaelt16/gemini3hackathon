@@ -1,105 +1,428 @@
 @import "tailwindcss";
 
+/* ============================================================================
+   UNIFIED DARK THEME - EVA Living Memory
+   Dark background with cyan/teal accents
+   ============================================================================ */
+
 :root {
-  --background: #faf6f1;
-  --foreground: #2d2a26;
-  --accent: #8b7355;
-  --accent-light: #c4a77d;
-  --paper: #fffef9;
-  --shadow: rgba(139, 115, 85, 0.15);
+  /* Core dark backgrounds — Spotify/Linear inspired, not pitch black */
+  --bg-primary: #121214;
+  --bg-secondary: #1a1a1c;
+  --bg-tertiary: #242426;
+  --bg-elevated: #1e1e20;
+  
+  /* Text colors */
+  --text-primary: #f0f0f0;
+  --text-secondary: rgba(240, 240, 240, 0.7);
+  --text-tertiary: rgba(240, 240, 240, 0.5);
+  --text-muted: rgba(240, 240, 240, 0.3);
+  
+  /* EVA accent colors - cyan/teal */
+  --eva-cyan: #06b6d4;
+  --eva-cyan-light: #22d3ee;
+  --eva-teal: #14b8a6;
+  --eva-glow: rgba(6, 182, 212, 0.4);
+  
+  /* Secondary accents */
+  --accent-purple: #8b5cf6;
+  --accent-amber: #f59e0b;
+  --accent-emerald: #10b981;
+  
+  /* Borders */
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --border-default: rgba(255, 255, 255, 0.10);
+  --border-hover: rgba(255, 255, 255, 0.16);
+  
+  /* Legacy vars for compatibility */
+  --background: #121214;
+  --foreground: #f0f0f0;
+  --accent: #06b6d4;
+  --accent-light: #22d3ee;
+}
+
+/* ============================================================================
+   LIGHT THEME - Apple-style clean white
+   ============================================================================ */
+
+[data-theme="light"] {
+  /* Core light backgrounds - Apple clean white */
+  --bg-primary: #f5f5f7;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #e8e8ed;
+  --bg-elevated: #ffffff;
+  
+  /* Text colors - Apple near-black + gray hierarchy */
+  --text-primary: #1d1d1f;
+  --text-secondary: #86868b;
+  --text-tertiary: #aeaeb2;
+  --text-muted: #c7c7cc;
+  
+  /* EVA accent colors - rich, deep for light mode contrast */
+  --eva-cyan: #0e7490;
+  --eva-cyan-light: #0891b2;
+  --eva-teal: #0d9488;
+  --eva-glow: rgba(14, 116, 144, 0.25);
+  
+  /* Borders - nearly invisible, Apple-style */
+  --border-subtle: rgba(0, 0, 0, 0.04);
+  --border-default: rgba(0, 0, 0, 0.08);
+  --border-hover: rgba(0, 0, 0, 0.15);
+  
+  /* Legacy vars */
+  --background: #f5f5f7;
+  --foreground: #1d1d1f;
+  --accent: #0e7490;
+  --accent-light: #0891b2;
+}
+
+/* Light mode scrollbar */
+[data-theme="light"] html,
+html[data-theme="light"] {
+  scrollbar-color: rgba(0, 0, 0, 0.15) var(--bg-primary);
+}
+
+html[data-theme="light"]::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+html[data-theme="light"]::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-color: var(--bg-primary);
+}
+
+html[data-theme="light"]::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.25);
+}
+
+/* Light mode card overrides */
+[data-theme="light"] .card {
+  background: var(--bg-elevated);
+  border-color: var(--border-subtle);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04), 0 1px 2px rgba(0, 0, 0, 0.03);
+}
+
+[data-theme="light"] .card:hover {
+  border-color: var(--border-default);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .card-elevated {
+  background: var(--bg-elevated);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.06);
+}
+
+/* Light mode button overrides */
+[data-theme="light"] .btn-secondary {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-primary);
+  border-color: var(--border-default);
+}
+
+[data-theme="light"] .btn-secondary:hover {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+[data-theme="light"] .btn-ghost {
+  color: var(--text-secondary);
+}
+
+[data-theme="light"] .btn-ghost:hover {
+  background: rgba(0, 0, 0, 0.04);
+  color: var(--text-primary);
+}
+
+/* Light mode glow - softer */
+[data-theme="light"] .eva-glow {
+  box-shadow: 0 0 30px rgba(8, 145, 178, 0.2);
+}
+
+[data-theme="light"] .eva-glow-subtle {
+  box-shadow: 0 0 15px rgba(8, 145, 178, 0.12);
+}
+
+/* ============================================================================
+   LIGHT MODE - Page-level overrides for inline-styled elements
+   These handle the hardcoded dark colors used across pages
+   ============================================================================ */
+
+/* Main page backgrounds */
+[data-theme="light"] .theme-page {
+  background: var(--bg-primary) !important;
+  color: var(--text-primary) !important;
+}
+
+/* Cards and elevated surfaces in light mode */
+[data-theme="light"] .theme-card {
+  background: var(--bg-elevated) !important;
+  border-color: var(--border-default) !important;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04) !important;
+}
+
+[data-theme="light"] .theme-card:hover {
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1) !important;
+}
+
+/* Swimlane / content sections */
+[data-theme="light"] .theme-section {
+  background: var(--bg-primary) !important;
+}
+
+/* Text overrides for theme-aware text */
+[data-theme="light"] .theme-text {
+  color: var(--text-primary) !important;
+}
+
+[data-theme="light"] .theme-text-secondary {
+  color: var(--text-secondary) !important;
+}
+
+[data-theme="light"] .theme-text-muted {
+  color: var(--text-muted) !important;
+}
+
+/* Surface for modals/panels in light mode */
+[data-theme="light"] .theme-surface {
+  background: var(--bg-elevated) !important;
+  border-color: var(--border-default) !important;
+}
+
+/* ============================================================================
+   LIGHT MODE - Nuclear text & background overrides
+   Catches hardcoded text-white across all pages
+   ============================================================================ */
+
+/* Force all pages to use theme text color by default */
+[data-theme="light"] main,
+[data-theme="light"] .min-h-screen {
+  color: var(--text-primary);
+}
+
+/* 
+ * NOTE: text-white overrides removed — components handle their own 
+ * light/dark text via isDark conditionals. Blanket overrides broke 
+ * white text on dark backgrounds (photo overlays, dark cards, modals, buttons).
+ */
+
+/*
+ * NOTE: bg-white/XX, border-white/XX, ring-white/XX blanket overrides removed.
+ * These broke elements on dark backgrounds (cinema hero, modals, photo overlays, 
+ * buttons with dark bg). Components handle their own light/dark styling via 
+ * isDark conditionals and CSS variables.
+ */
+
+/* Specific dark-bg patterns that need complete override */
+[data-theme="light"] [style*="rgba(20,20,24"],
+[data-theme="light"] [style*="rgba(26,26,30"] {
+  background: var(--bg-elevated) !important;
+  border-color: var(--border-default) !important;
+}
+
+/* Override dark gradient backgrounds on header bars */
+[data-theme="light"] [style*="background: rgba(20,20,24"] {
+  background: var(--bg-elevated) !important;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.06) !important;
+}
+
+/* Cyan accent adjustments for light mode readability */
+[data-theme="light"] .text-cyan-400 { color: #0e7490 !important; }
+[data-theme="light"] .text-cyan-300 { color: #0891b2 !important; }
+[data-theme="light"] .text-cyan-400\/60 { color: rgba(14, 116, 144, 0.7) !important; }
+
+/* Purple accent adjustments */
+[data-theme="light"] .text-purple-300\/70 { color: rgba(126, 34, 206, 0.8) !important; }
+[data-theme="light"] .text-purple-400 { color: #7c3aed !important; }
+
+/* Gradient text on backgrounds - readable in light */
+[data-theme="light"] .bg-gradient-to-t.from-black\/60 { background: linear-gradient(to top, rgba(0,0,0,0.5), transparent) !important; }
+[data-theme="light"] .bg-gradient-to-t.from-black\/50 { background: linear-gradient(to top, rgba(0,0,0,0.4), transparent) !important; }
+
+/* Canvas/dot grid backgrounds */  
+[data-theme="light"] [style*="rgba(255,255,255,0.02)"] {
+  background-image: radial-gradient(circle at 1px 1px, rgba(0,0,0,0.04) 1px, transparent 0) !important;
+}
+
+/* Scrollbar inside containers for light mode */
+[data-theme="light"] .custom-scrollbar::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.12);
+}
+[data-theme="light"] .custom-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* Smooth transition for theme changes */
+html[data-theme] {
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+html[data-theme] body {
+  transition: background-color 0.3s ease, color 0.3s ease;
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --color-background: var(--bg-primary);
+  --color-foreground: var(--text-primary);
+  --font-sans: var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
+  --font-serif: var(--font-crimson), Georgia, serif;
+  --font-mono: ui-monospace, "Cascadia Code", "Source Code Pro", Menlo, monospace;
 }
 
 html, body {
-  background: #0f0d0a;
-  color: var(--foreground);
-  font-family: 'Georgia', serif;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-family: var(--font-inter), -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", sans-serif;
   min-height: 100%;
 }
 
-/* Global scrollbar - matches dark warm aesthetic */
+/* ============================================================================
+   SCROLLBAR - Matches dark theme
+   ============================================================================ */
+
 html {
   scrollbar-width: thin;
-  scrollbar-color: rgba(139, 115, 85, 0.5) rgba(15, 13, 10, 0.8);
+  scrollbar-color: rgba(255, 255, 255, 0.15) var(--bg-secondary);
 }
 
 html::-webkit-scrollbar {
-  width: 10px;
-}
-
-html::-webkit-scrollbar-track {
-  background: rgba(15, 13, 10, 0.95);
-}
-
-html::-webkit-scrollbar-thumb {
-  background: rgba(139, 115, 85, 0.4);
-  border-radius: 5px;
-  border: 2px solid rgba(15, 13, 10, 0.95);
-}
-
-html::-webkit-scrollbar-thumb:hover {
-  background: rgba(139, 115, 85, 0.6);
-}
-
-html::-webkit-scrollbar-thumb:active {
-  background: rgba(196, 167, 125, 0.5);
-}
-
-/* Vintage paper texture */
-.paper-texture {
-  background: var(--paper);
-  background-image: 
-    radial-gradient(ellipse at 50% 0%, rgba(255, 253, 245, 0.8) 0%, transparent 75%),
-    url("data:image/svg+xml,%3Csvg viewBox='0 0 200 200' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.65' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%' height='100%' filter='url(%23noise)' opacity='0.04'/%3E%3C/svg%3E");
-}
-
-/* Photo frame styling */
-.photo-frame {
-  background: linear-gradient(145deg, #f5f0e8, #e8e0d5);
-  padding: 12px;
-  box-shadow: 
-    0 4px 20px var(--shadow),
-    inset 0 1px 0 rgba(255, 255, 255, 0.5);
-  border: 1px solid rgba(139, 115, 85, 0.2);
-}
-
-/* Conversation bubble */
-.bubble-ai {
-  background: linear-gradient(135deg, #f8f5f0, #f0ebe3);
-  border-left: 3px solid var(--accent);
-}
-
-.bubble-user {
-  background: linear-gradient(135deg, #fff, #fdfcfa);
-  border-right: 3px solid var(--accent-light);
-}
-
-/* Scrollbar styling */
-.custom-scrollbar::-webkit-scrollbar {
   width: 8px;
 }
 
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: rgba(139, 115, 85, 0.1);
+html::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+html::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
   border-radius: 4px;
+  border: 2px solid var(--bg-secondary);
+}
+
+html::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.25);
+}
+
+/* Custom scrollbar for containers */
+.custom-scrollbar::-webkit-scrollbar {
+  width: 6px;
+}
+
+.custom-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb {
-  background: var(--accent-light);
-  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
 }
 
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: var(--accent);
+  background: rgba(255, 255, 255, 0.2);
 }
 
-/* Animated loading dots */
+/* Hide scrollbar utility */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+/* ============================================================================
+   CARD STYLES - Unified card design
+   ============================================================================ */
+
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.card:hover {
+  border-color: var(--border-default);
+  background: var(--bg-tertiary);
+}
+
+.card-elevated {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-default);
+  border-radius: 16px;
+  box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+}
+
+/* ============================================================================
+   BUTTON STYLES
+   ============================================================================ */
+
+.btn-primary {
+  background: linear-gradient(135deg, var(--eva-cyan), var(--eva-teal));
+  color: white;
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 9999px;
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+  transition: all 0.2s ease;
+}
+
+.btn-primary:hover {
+  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+  border: 1px solid var(--border-default);
+  padding: 0.75rem 1.5rem;
+  border-radius: 9999px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: var(--border-hover);
+}
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  transition: all 0.2s ease;
+}
+
+.btn-ghost:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--text-primary);
+}
+
+/* ============================================================================
+   EVA GLOW EFFECTS
+   ============================================================================ */
+
+.eva-glow {
+  box-shadow: 0 0 40px var(--eva-glow);
+}
+
+.eva-glow-subtle {
+  box-shadow: 0 0 20px rgba(6, 182, 212, 0.2);
+}
+
+.eva-text-glow {
+  text-shadow: 0 0 30px var(--eva-glow);
+}
+
+/* ============================================================================
+   ANIMATIONS
+   ============================================================================ */
+
+/* Loading dots */
 @keyframes pulse-dot {
   0%, 100% { opacity: 0.3; }
   50% { opacity: 1; }
@@ -117,85 +440,20 @@ html::-webkit-scrollbar-thumb:active {
   animation-delay: 0.4s;
 }
 
-/* Toast fade-in animation */
+/* Fade in */
 @keyframes fade-in {
-  from { 
-    opacity: 0; 
-    transform: translate(-50%, 20px);
-  }
-  to { 
-    opacity: 1; 
-    transform: translate(-50%, 0);
-  }
+  from { opacity: 0; transform: translateY(10px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .animate-fade-in {
   animation: fade-in 0.3s ease-out;
 }
 
-/* Bounding box glow animation */
-@keyframes box-glow {
-  0%, 100% { 
-    opacity: 1;
-    box-shadow: 0 0 10px currentColor;
-  }
-  50% { 
-    opacity: 0.7;
-    box-shadow: 0 0 20px currentColor, 0 0 30px currentColor;
-  }
-}
-
-.animate-box-glow {
-  animation: box-glow 2s ease-in-out infinite;
-}
-
-/* Smooth box entrance */
-@keyframes box-enter {
-  from {
-    opacity: 0;
-    transform: scale(0.9);
-  }
-  to {
-    opacity: 1;
-    transform: scale(1);
-  }
-}
-
-.animate-box-enter {
-  animation: box-enter 0.3s ease-out;
-}
-
-/* Scanning line effect for detected objects */
-@keyframes scanLine {
-  0% {
-    top: 0%;
-    opacity: 0.8;
-  }
-  50% {
-    opacity: 0.4;
-  }
-  100% {
-    top: 100%;
-    opacity: 0.8;
-  }
-}
-
-/* Fade in for overlays */
-@keyframes fadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
-/* Fade in up animation for hero elements */
+/* Fade in up */
 @keyframes fade-in-up {
-  from {
-    opacity: 0;
-    transform: translateY(30px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+  from { opacity: 0; transform: translateY(30px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .animate-fade-in-up {
@@ -203,65 +461,99 @@ html::-webkit-scrollbar-thumb:active {
   animation: fade-in-up 0.8s ease-out forwards;
 }
 
-/* Floating animation for background orbs */
+/* Float */
 @keyframes float {
-  0%, 100% {
-    transform: translate(0, 0) scale(1);
-  }
-  33% {
-    transform: translate(30px, -30px) scale(1.1);
-  }
-  66% {
-    transform: translate(-20px, 20px) scale(0.9);
-  }
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  33% { transform: translate(30px, -30px) scale(1.1); }
+  66% { transform: translate(-20px, 20px) scale(0.9); }
 }
 
 .animate-float {
   animation: float linear infinite;
 }
 
-/* Hide scrollbar utility */
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
-
-/* Ping animation for mic rings */
-@keyframes ping {
-  75%, 100% {
-    transform: scale(2);
-    opacity: 0;
-  }
-}
-
-/* Spin animation */
+/* Spin */
 @keyframes spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .animate-spin {
   animation: spin 1s linear infinite;
 }
 
-/* Pulse animation */
+/* Pulse */
 @keyframes pulse {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.5;
-  }
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
 }
 
 .animate-pulse {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
+
+/* Shimmer */
+@keyframes shimmer {
+  0%, 100% { transform: translateX(-100%); opacity: 0; }
+  50% { transform: translateX(100%); opacity: 0.5; }
+}
+
+.animate-shimmer {
+  animation: shimmer 3s ease-in-out infinite;
+}
+
+/* Box glow */
+@keyframes box-glow {
+  0%, 100% { opacity: 1; box-shadow: 0 0 10px currentColor; }
+  50% { opacity: 0.7; box-shadow: 0 0 20px currentColor, 0 0 30px currentColor; }
+}
+
+.animate-box-glow {
+  animation: box-glow 2s ease-in-out infinite;
+}
+
+/* Box enter */
+@keyframes box-enter {
+  from { opacity: 0; transform: scale(0.9); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.animate-box-enter {
+  animation: box-enter 0.3s ease-out;
+}
+
+/* Scan line */
+@keyframes scanLine {
+  0% { top: 0%; opacity: 0.8; }
+  50% { opacity: 0.4; }
+  100% { top: 100%; opacity: 0.8; }
+}
+
+/* Ping */
+@keyframes ping {
+  75%, 100% { transform: scale(2); opacity: 0; }
+}
+
+@keyframes lm-wave {
+  0% { transform: scaleY(0.4); }
+  100% { transform: scaleY(1); }
+}
+
+/* ============================================================================
+   UTILITY CLASSES
+   ============================================================================ */
+
+/* Text colors */
+.text-eva { color: var(--eva-cyan); }
+.text-eva-light { color: var(--eva-cyan-light); }
+
+/* Background colors */
+.bg-eva { background-color: var(--eva-cyan); }
+.bg-primary { background-color: var(--bg-primary); }
+.bg-secondary { background-color: var(--bg-secondary); }
+.bg-tertiary { background-color: var(--bg-tertiary); }
+.bg-elevated { background-color: var(--bg-elevated); }
+
+/* Border colors */
+.border-subtle { border-color: var(--border-subtle); }
+.border-default { border-color: var(--border-default); }

@@ -1,7 +1,14 @@
 import type { Metadata } from "next";
-import { Crimson_Pro, Lora } from "next/font/google";
+import { Inter, Crimson_Pro } from "next/font/google";
 import "./globals.css";
 import { NavigationLoadingProvider } from "@/components/NavigationLoading";
+import ThemeWrapper from "@/components/ThemeWrapper";
+
+const inter = Inter({
+  variable: "--font-inter",
+  subsets: ["latin"],
+  weight: ["300", "400", "500", "600", "700"],
+});
 
 const crimsonPro = Crimson_Pro({
   variable: "--font-crimson",
@@ -9,15 +16,9 @@ const crimsonPro = Crimson_Pro({
   weight: ["400", "500", "600"],
 });
 
-const lora = Lora({
-  variable: "--font-lora",
-  subsets: ["latin"],
-  weight: ["400", "500", "600"],
-});
-
 export const metadata: Metadata = {
-  title: "Memory Keeper - Preserve Family Stories",
-  description: "Transform cherished photos into living memories with AI-powered storytelling",
+  title: "Living Memory — Where Your Family Stories Become Forever",
+  description: "An AI companion that helps your family capture, preserve, and relive the stories that matter most. Built with Google Gemini.",
 };
 
 export default function RootLayout({
@@ -28,13 +29,14 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${crimsonPro.variable} ${lora.variable} antialiased`}
-        style={{ fontFamily: 'var(--font-lora), Georgia, serif' }}
+        className={`${inter.variable} ${crimsonPro.variable} antialiased`}
         suppressHydrationWarning
       >
-        <NavigationLoadingProvider>
-        {children}
-        </NavigationLoadingProvider>
+        <ThemeWrapper>
+          <NavigationLoadingProvider>
+            {children}
+          </NavigationLoadingProvider>
+        </ThemeWrapper>
       </body>
     </html>
   );

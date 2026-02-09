@@ -23,43 +23,58 @@ export interface TTSOptions {
 }
 
 /**
- * Clone a voice from an audio sample
- * @param audioFile - Audio file buffer
+ * Clone a voice from one or more audio samples
+ * @param audioFiles - Array of audio file buffers (or single buffer for backward compat)
  * @param voiceName - Name for the cloned voice
- * @returns Voice profile ID
+ * @param description - Optional description
+ * @returns Voice profile with ID
  */
 export async function cloneVoice(
-  audioFile: Buffer,
-  voiceName: string
+  audioFiles: Buffer | Buffer[],
+  voiceName: string,
+  description?: string
 ): Promise<VoiceProfile> {
   if (!ELEVENLABS_API_KEY) {
     throw new Error('ELEVENLABS_API_KEY not configured');
   }
 
-  try {
-    // Create multipart form data for ElevenLabs API
-    const FormData = (await import('form-data')).default;
-    const formData = new FormData();
-    
-    formData.append('files', audioFile, {
-      filename: 'voice-sample.mp3',
-      contentType: 'audio/mpeg',
-    });
-    formData.append('name', voiceName);
+  // Normalize to array
+  const files = Array.isArray(audioFiles) ? audioFiles : [audioFiles];
+  
+  if (files.length === 0) {
+    throw new Error('At least one audio file is required');
+  }
 
-    // Use node-fetch or native fetch with proper headers
-    const headers = formData.getHeaders();
-    headers['xi-api-key'] = ELEVENLABS_API_KEY;
+  try {
+    // Build multipart form data manually using Web API FormData
+    const formData = new globalThis.FormData();
+    
+    files.forEach((file, index) => {
+      const blob = new Blob([file], { type: 'audio/mpeg' });
+      formData.append('files', blob, `voice-sample-${index + 1}.mp3`);
+    });
+    
+    formData.append('name', voiceName);
+    
+    if (description) {
+      formData.append('description', description);
+    }
+    
+    // Remove background noise for cleaner cloning
+    formData.append('remove_background_noise', 'true');
 
     const response = await fetch(`${ELEVENLABS_API_URL}/voices/add`, {
       method: 'POST',
-      headers: headers as any,
-      body: formData as any,
+      headers: {
+        'xi-api-key': ELEVENLABS_API_KEY,
+      },
+      body: formData,
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`ElevenLabs API error: ${error}`);
+      const errorText = await response.text();
+      console.error('ElevenLabs clone error:', response.status, errorText);
+      throw new Error(`ElevenLabs API error (${response.status}): ${errorText}`);
     }
 
     const data = await response.json();

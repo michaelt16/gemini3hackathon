@@ -1,0 +1,28 @@
+{
+  "name": "living-memory-showcase",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "npx remotion studio",
+    "build": "npx remotion render ShowcaseVideo out/showcase.mp4",
+    "build:hook": "npx remotion render HookScene out/hook.mp4",
+    "build:intro": "npx remotion render IntroScene out/intro.mp4",
+    "build:capture": "npx remotion render CaptureScene out/capture.mp4",
+    "build:enhance": "npx remotion render EnhanceAnimateScene out/enhance-animate.mp4",
+    "build:narrate": "npx remotion render NarrateScene out/narrate.mp4",
+    "build:experience": "npx remotion render ExperienceScene out/experience.mp4",
+    "build:tech": "npx remotion render TechStackScene out/tech.mp4",
+    "build:outro": "npx remotion render OutroScene out/outro.mp4"
+  },
+  "dependencies": {
+    "@remotion/cli": "latest",
+    "@remotion/player": "latest",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "remotion": "latest"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.12",
+    "typescript": "^5.7.0"
+  }
+}

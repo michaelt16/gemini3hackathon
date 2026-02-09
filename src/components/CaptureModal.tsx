@@ -4,6 +4,7 @@ import { useEffect, useState, useCallback, useRef } from 'react';
 import CaptureSession from './CaptureSession';
 import EVAOrb from './EVAOrb';
 import { AuroraWave } from './capture/AuroraWave';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface CaptureModalProps {
   isOpen: boolean;
@@ -55,6 +56,8 @@ export default function CaptureModal({
   onPhotosAdded,
   tutorialMode = false,
 }: CaptureModalProps) {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const [showTutorial, setShowTutorial] = useState(false);
   const [tutorialStep, setTutorialStep] = useState(0);
   const [tutorialText, setTutorialText] = useState('');
@@ -186,7 +189,7 @@ export default function CaptureModal({
           <div className="fixed inset-0 z-[110] bg-black/50" />
           
           {/* Tutorial card - matching album tutorial style */}
-          <div className={`fixed z-[120] w-[420px] max-w-[calc(100vw-2rem)] rounded-2xl overflow-hidden bg-gradient-to-b from-[#0a0a0f] to-[#0f0a15] border border-cyan-500/30 shadow-2xl flex flex-col transition-all duration-300 ${
+          <div className={`fixed z-[120] w-[420px] max-w-[calc(100vw-2rem)] rounded-2xl overflow-hidden ${isDark ? 'bg-gradient-to-b from-[#0a0a0f] to-[#0f0a15]' : 'bg-gradient-to-b from-[var(--bg-elevated)] to-[var(--bg-primary)]'} border border-cyan-500/30 shadow-2xl flex flex-col transition-all duration-300 ${
             currentStep?.position === 'center' ? 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2' :
             currentStep?.position === 'bottom-left' ? 'bottom-32 left-12 md:left-20' :
             currentStep?.position === 'bottom-center' ? 'bottom-32 left-1/2 -translate-x-1/2' :

@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>EVA Orb — Record Animation</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #0a0a0a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: system-ui, sans-serif;
+      color: #e0e0e0;
+    }
+    #controls {
+      margin-bottom: 24px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+    }
+    button {
+      padding: 10px 24px;
+      font-size: 14px;
+      border: 1px solid rgba(6,182,212,0.5);
+      background: rgba(6,182,212,0.1);
+      color: #67e8f9;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    button:hover { background: rgba(6,182,212,0.25); }
+    button:disabled { opacity: 0.4; cursor: default; }
+    #status { font-size: 13px; color: #999; min-width: 200px; text-align: center; }
+    select, input {
+      padding: 8px 12px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.15);
+      color: #e0e0e0;
+      border-radius: 6px;
+      font-size: 13px;
+    }
+    label { font-size: 13px; color: #999; }
+    .settings { display: flex; gap: 16px; align-items: center; margin-bottom: 16px; }
+    canvas { border-radius: 12px; }
+  </style>
+</head>
+<body>
+  <h2 style="margin-bottom: 8px; color: #67e8f9; font-weight: 400;">EVA Orb Recorder</h2>
+  <div class="settings">
+    <label>Size: <input type="number" id="sizeInput" value="512" min="128" max="2048" step="64" style="width:80px"></label>
+    <label>Duration (s): <input type="number" id="durationInput" value="6" min="1" max="60" step="1" style="width:60px"></label>
+    <label>BG:
+      <select id="bgSelect">
+        <option value="black">Black</option>
+        <option value="transparent">Transparent (WebM only)</option>
+        <option value="custom">Custom color</option>
+      </select>
+    </label>
+    <input type="color" id="customColor" value="#0a0a0a" style="width:40px; height:32px; display:none;">
+  </div>
+  <div id="controls">
+    <button id="recordBtn">⏺ Record</button>
+    <button id="stopBtn" disabled>⏹ Stop</button>
+    <span id="status">Ready</span>
+  </div>
+  <canvas id="orbCanvas"></canvas>
+
+  <script>
+    const canvas = document.getElementById('orbCanvas');
+    const ctx = canvas.getContext('2d');
+    const sizeInput = document.getElementById('sizeInput');
+    const durationInput = document.getElementById('durationInput');
+    const bgSelect = document.getElementById('bgSelect');
+    const customColor = document.getElementById('customColor');
+    const recordBtn = document.getElementById('recordBtn');
+    const stopBtn = document.getElementById('stopBtn');
+    const statusEl = document.getElementById('status');
+
+    bgSelect.addEventListener('change', () => {
+      customColor.style.display = bgSelect.value === 'custom' ? 'inline-block' : 'none';
+    });
+
+    let size = 512;
+    let animId = null;
+    let timeVal = 0;
+
+    function setupCanvas() {
+      size = parseInt(sizeInput.value) || 512;
+      const dpr = 1; // keep 1:1 for recording
+      canvas.width = size;
+      canvas.height = size;
+      canvas.style.width = Math.min(size, 512) + 'px';
+      canvas.style.height = Math.min(size, 512) + 'px';
+    }
+
+    // --- EVA Orb animation (extracted from React component, dark mode) ---
+    const makeOrbits = (s) => [
+      { radiusX: s*0.42, radiusY: s*0.16, tiltX: -0.2, tiltY: 0.1, rotation: -Math.PI*0.1, speed: 0.3, width: 2.5, colors: [[6,182,212],[16,185,129]] },
+      { radiusX: s*0.40, radiusY: s*0.14, tiltX: 0.5, tiltY: 0.3, rotation: Math.PI*0.45, speed: 0.4, width: 2.2, colors: [[59,130,246],[139,92,246]] },
+      { radiusX: s*0.44, radiusY: s*0.12, tiltX: 0.1, tiltY: -0.4, rotation: Math.PI*0.85, speed: 0.35, width: 2.0, colors: [[16,185,129],[6,182,212]] },
+      { radiusX: s*0.38, radiusY: s*0.18, tiltX: 0.3, tiltY: -0.2, rotation: Math.PI*0.25, speed: 0.28, width: 1.8, colors: [[139,92,246],[59,130,246]] },
+      { radiusX: s*0.41, radiusY: s*0.13, tiltX: -0.4, tiltY: 0.5, rotation: Math.PI*0.65, speed: 0.32, width: 1.6, colors: [[6,182,212],[139,92,246]] },
+      { radiusX: s*0.36, radiusY: s*0.20, tiltX: 0.6, tiltY: 0.1, rotation: Math.PI*0.0, speed: 0.38, width: 1.5, colors: [[16,185,129],[59,130,246]] },
+      { radiusX: s*0.43, radiusY: s*0.10, tiltX: -0.1, tiltY: -0.6, rotation: Math.PI*1.1, speed: 0.25, width: 1.4, colors: [[59,130,246],[6,182,212]] },
+      { radiusX: s*0.39, radiusY: s*0.15, tiltX: 0.4, tiltY: 0.4, rotation: Math.PI*0.55, speed: 0.42, width: 1.3, colors: [[139,92,246],[16,185,129]] },
+      { radiusX: s*0.37, radiusY: s*0.17, tiltX: -0.5, tiltY: -0.3, rotation: Math.PI*0.15, speed: 0.33, width: 1.2, colors: [[6,182,212],[139,92,246]] },
+      { radiusX: s*0.45, radiusY: s*0.11, tiltX: 0.2, tiltY: -0.5, rotation: Math.PI*0.72, speed: 0.29, width: 1.2, colors: [[16,185,129],[139,92,246]] },
+      { radiusX: s*0.35, radiusY: s*0.22, tiltX: -0.3, tiltY: 0.6, rotation: Math.PI*0.38, speed: 0.36, width: 1.1, colors: [[59,130,246],[6,182,212]] },
+      { radiusX: s*0.40, radiusY: s*0.14, tiltX: 0.55, tiltY: -0.35, rotation: Math.PI*0.92, speed: 0.31, width: 1.1, colors: [[139,92,246],[6,182,212]] },
+      { radiusX: s*0.38, radiusY: s*0.16, tiltX: -0.6, tiltY: 0.2, rotation: Math.PI*0.18, speed: 0.27, width: 1.0, colors: [[16,185,129],[59,130,246]] },
+    ];
+
+    function drawFrame(t, orbits, bgColor) {
+      const centerX = size / 2;
+      const centerY = size / 2;
+      const active = true; // always "active" look for the recording
+
+      ctx.clearRect(0, 0, size, size);
+
+      // Background
+      if (bgColor && bgColor !== 'transparent') {
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, size, size);
+      }
+
+      // Scale line widths for larger canvas
+      const scale = size / 96;
+
+      // Ambient glow
+      const glowSize = size * 0.5;
+      const ambientGlow = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, glowSize);
+      ambientGlow.addColorStop(0, `rgba(6, 182, 212, 0.2)`);
+      ambientGlow.addColorStop(0.4, `rgba(59, 130, 246, 0.12)`);
+      ambientGlow.addColorStop(0.7, `rgba(139, 92, 246, 0.06)`);
+      ambientGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.fillStyle = ambientGlow;
+      ctx.fillRect(0, 0, size, size);
+
+      // Orbital rings
+      orbits.forEach((orbit, orbitIndex) => {
+        ctx.save();
+        ctx.translate(centerX, centerY);
+
+        const rotationOffset = t * orbit.speed;
+        ctx.rotate(orbit.rotation + rotationOffset * 1.4);
+
+        const passes = [
+          { blur: 8, alpha: 0.3, widthMult: 3 },
+          { blur: 4, alpha: 0.5, widthMult: 2 },
+          { blur: 0, alpha: 1, widthMult: 1 },
+        ];
+
+        passes.forEach(pass => {
+          const segments = 100;
+          for (let i = 0; i < segments; i++) {
+            const angle1 = (i / segments) * Math.PI * 2;
+            const angle2 = ((i + 1) / segments) * Math.PI * 2;
+
+            const wave1 = Math.sin(angle1 * 2 + t * 2 + orbitIndex) * 0.5 + 0.5;
+            const wave2 = Math.sin(angle1 * 4 + t * 3 + orbitIndex * 0.7) * 0.3 + 0.7;
+            const wave3 = Math.sin(angle1 * 1.5 + t * 1.5) * 0.2 + 0.8;
+            const waveMod = wave1 * wave2 * wave3;
+
+            const depth = Math.sin(angle1 + orbit.tiltX) * 0.5 + 0.5;
+            const depthAlpha = 0.4 + depth * 0.6;
+
+            const perspectiveScale = 1 + Math.sin(angle1 + t * orbit.speed) * orbit.tiltY * 0.2;
+            const x1 = Math.cos(angle1) * orbit.radiusX * perspectiveScale;
+            const y1 = Math.sin(angle1) * orbit.radiusY * perspectiveScale;
+            const x2 = Math.cos(angle2) * orbit.radiusX * perspectiveScale;
+            const y2 = Math.sin(angle2) * orbit.radiusY * perspectiveScale;
+
+            const colorBlend = (Math.sin(angle1 + t) + 1) / 2;
+            const c1 = orbit.colors[0];
+            const c2 = orbit.colors[1];
+            const r = Math.round(c1[0] + (c2[0] - c1[0]) * colorBlend);
+            const g = Math.round(c1[1] + (c2[1] - c1[1]) * colorBlend);
+            const b = Math.round(c1[2] + (c2[2] - c1[2]) * colorBlend);
+
+            const alpha = Math.min(1, waveMod * depthAlpha * pass.alpha);
+            const lineWidth = orbit.width * scale * pass.widthMult * (0.5 + waveMod * 0.5);
+
+            ctx.beginPath();
+            ctx.moveTo(x1, y1);
+            ctx.lineTo(x2, y2);
+            ctx.strokeStyle = `rgba(${r}, ${g}, ${b}, ${alpha})`;
+            ctx.lineWidth = lineWidth;
+            ctx.lineCap = 'round';
+            ctx.stroke();
+          }
+        });
+
+        // Bright spots
+        for (let i = 0; i < 2; i++) {
+          const spotAngle = t * orbit.speed * 2 + (i * Math.PI);
+          const perspectiveScale = 1 + Math.sin(spotAngle + t * orbit.speed) * orbit.tiltY * 0.2;
+          const spotX = Math.cos(spotAngle) * orbit.radiusX * perspectiveScale;
+          const spotY = Math.sin(spotAngle) * orbit.radiusY * perspectiveScale;
+
+          const d = Math.sin(spotAngle + orbit.tiltX) * 0.5 + 0.5;
+          const spotIntensity = (0.5 + d * 0.5) * 1.2;
+          const spotSize = size * 0.06;
+
+          const spotGlow = ctx.createRadialGradient(spotX, spotY, 0, spotX, spotY, spotSize);
+          spotGlow.addColorStop(0, `rgba(255, 255, 255, ${Math.min(1, 0.8 * spotIntensity)})`);
+          spotGlow.addColorStop(0.3, `rgba(${orbit.colors[0][0]}, ${orbit.colors[0][1]}, ${orbit.colors[0][2]}, ${Math.min(1, 0.5 * spotIntensity)})`);
+          spotGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+
+          ctx.beginPath();
+          ctx.arc(spotX, spotY, spotSize, 0, Math.PI * 2);
+          ctx.fillStyle = spotGlow;
+          ctx.fill();
+        }
+
+        ctx.restore();
+      });
+
+      // Central nucleus
+      const nucleusRadius = size * 0.11;
+      const pulse = 1 + Math.sin(t * 2.5) * 0.08 + 0.05;
+      const pulsedRadius = nucleusRadius * pulse;
+
+      // Outer glow
+      const outerGlowRadius = pulsedRadius * 3.5;
+      const outerGlow = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, outerGlowRadius);
+      outerGlow.addColorStop(0, `rgba(6, 182, 212, 0.5)`);
+      outerGlow.addColorStop(0.3, `rgba(59, 130, 246, 0.3)`);
+      outerGlow.addColorStop(0.6, `rgba(139, 92, 246, 0.15)`);
+      outerGlow.addColorStop(1, 'rgba(0, 0, 0, 0)');
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, outerGlowRadius, 0, Math.PI * 2);
+      ctx.fillStyle = outerGlow;
+      ctx.fill();
+
+      // Inner glow
+      const innerGlowRadius = pulsedRadius * 2;
+      const innerGlow = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, innerGlowRadius);
+      innerGlow.addColorStop(0, `rgba(255, 255, 255, 0.6)`);
+      innerGlow.addColorStop(0.5, `rgba(6, 182, 212, 0.5)`);
+      innerGlow.addColorStop(1, 'rgba(6, 182, 212, 0)');
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, innerGlowRadius, 0, Math.PI * 2);
+      ctx.fillStyle = innerGlow;
+      ctx.fill();
+
+      // 3D sphere
+      const lightX = -pulsedRadius * 0.35;
+      const lightY = -pulsedRadius * 0.35;
+      const sphereGrad = ctx.createRadialGradient(centerX + lightX, centerY + lightY, 0, centerX, centerY, pulsedRadius);
+      sphereGrad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+      sphereGrad.addColorStop(0.2, 'rgba(200, 255, 255, 0.95)');
+      sphereGrad.addColorStop(0.5, 'rgba(6, 182, 212, 0.9)');
+      sphereGrad.addColorStop(0.8, 'rgba(59, 130, 246, 0.85)');
+      sphereGrad.addColorStop(1, 'rgba(99, 102, 241, 0.8)');
+      ctx.beginPath();
+      ctx.arc(centerX, centerY, pulsedRadius, 0, Math.PI * 2);
+      ctx.fillStyle = sphereGrad;
+      ctx.fill();
+
+      // Specular highlights
+      ctx.beginPath();
+      ctx.arc(centerX + lightX * 0.7, centerY + lightY * 0.7, pulsedRadius * 0.3, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+      ctx.fill();
+
+      ctx.beginPath();
+      ctx.arc(centerX + lightX * 0.4, centerY + lightY * 0.4, pulsedRadius * 0.15, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
+      ctx.fill();
+    }
+
+    // --- Preview loop ---
+    function startPreview() {
+      setupCanvas();
+      const orbits = makeOrbits(size);
+      const bg = bgSelect.value === 'custom' ? customColor.value : (bgSelect.value === 'transparent' ? null : '#000000');
+
+      function loop() {
+        timeVal += 0.04 * 2; // active speed
+        drawFrame(timeVal, orbits, bg);
+        animId = requestAnimationFrame(loop);
+      }
+      if (animId) cancelAnimationFrame(animId);
+      loop();
+    }
+
+    // --- Recording ---
+    let recorder = null;
+    let chunks = [];
+
+    recordBtn.addEventListener('click', () => {
+      setupCanvas();
+      const orbits = makeOrbits(size);
+      const duration = (parseInt(durationInput.value) || 6) * 1000;
+      const bgVal = bgSelect.value;
+      const bg = bgVal === 'custom' ? customColor.value : (bgVal === 'transparent' ? null : '#000000');
+
+      // Reset time for a clean loop
+      timeVal = 0;
+
+      const stream = canvas.captureStream(60); // 60fps
+      const mimeType = bgVal === 'transparent' ? 'video/webm;codecs=vp9' : 'video/webm;codecs=vp9';
+      recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 8000000 });
+      chunks = [];
+
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: 'video/webm' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `eva-orb-${size}px.webm`;
+        a.click();
+        URL.revokeObjectURL(url);
+        statusEl.textContent = 'Done! File downloaded.';
+        recordBtn.disabled = false;
+        stopBtn.disabled = true;
+        startPreview();
+      };
+
+      // Stop existing preview and run recording loop
+      if (animId) cancelAnimationFrame(animId);
+
+      recorder.start();
+      recordBtn.disabled = true;
+      stopBtn.disabled = false;
+
+      const startTime = performance.now();
+      statusEl.textContent = 'Recording...';
+
+      function recordLoop() {
+        const elapsed = performance.now() - startTime;
+        timeVal += 0.04 * 2;
+        drawFrame(timeVal, orbits, bg);
+
+        const remaining = Math.max(0, Math.ceil((duration - elapsed) / 1000));
+        statusEl.textContent = `Recording... ${remaining}s left`;
+
+        if (elapsed < duration) {
+          animId = requestAnimationFrame(recordLoop);
+        } else {
+          recorder.stop();
+        }
+      }
+      recordLoop();
+    });
+
+    stopBtn.addEventListener('click', () => {
+      if (recorder && recorder.state === 'recording') {
+        recorder.stop();
+        if (animId) cancelAnimationFrame(animId);
+      }
+    });
+
+    // Restart preview on setting changes
+    sizeInput.addEventListener('change', startPreview);
+    bgSelect.addEventListener('change', startPreview);
+    customColor.addEventListener('change', startPreview);
+
+    // Start preview immediately
+    startPreview();
+  </script>
+</body>
+</html>

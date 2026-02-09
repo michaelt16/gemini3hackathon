@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { GoogleGenerativeAI } from '@google/generative-ai';
 import { generateVideoWithPolling, VeoVideoConfig } from '@/lib/veo-service';
+import { buildAnimationPrompt } from '@/lib/animation-styles';
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || '');
 
@@ -46,17 +47,16 @@ Respond with ONLY "YES" if minors are detected, or "NO" if no minors are present
  */
 async function animatePhoto(
   imageBase64: string,
-  storyText: string
+  storyText: string,
+  animationStyle: string = 'cinematic'
 ): Promise<{ videoUrl: string; videoBase64?: string; duration: number }> {
   try {
     // Calculate duration based on story length (4, 6, or 8 seconds)
     const estimatedDuration = Math.ceil(storyText.split(/\s+/).length / 2.5);
     const duration = estimatedDuration <= 4 ? 4 : estimatedDuration <= 6 ? 6 : 8;
     
-    // Build animation prompt - match Grok style for consistent quality
-    const animationPrompt = storyText
-      ? `Bring this photograph to life with natural, cinematic animation. The photo shows: ${storyText}. Add subtle movement like wind in hair and clothes, gentle breathing, environmental motion like leaves or water, light flickering. Keep the main subject stable while the environment comes alive. Smooth, natural motion. Don't change the faces, don't make them talk. No background music, but keep background noises.`
-      : `Bring this photograph to life with natural, cinematic animation. Add subtle movement like wind in hair and clothes, gentle breathing, environmental motion like leaves or water, light flickering. Keep the main subject stable while the environment comes alive. Smooth, natural motion. Don't change the faces, don't make them talk. No background music, but keep background noises.`;
+    // Build style-specific animation prompt
+    const animationPrompt = buildAnimationPrompt(animationStyle, storyText || undefined);
     
     // Determine aspect ratio from image (default to 16:9)
     // Could analyze image dimensions, but for now default to 16:9
@@ -94,7 +94,7 @@ async function animatePhoto(
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { photoUrl, photoBase64, storyText, animationStyle = 'subtle' } = body;
+    const { photoUrl, photoBase64, storyText, animationStyle = 'cinematic' } = body;
 
     // Accept either photoBase64 (raw base64 or data URL) or photoUrl (http URL or data URL)
     let imageBase64 = photoBase64 || '';
@@ -158,7 +158,7 @@ export async function POST(request: NextRequest) {
     // Animate photo using VEO 3
     let animationResult;
     try {
-      animationResult = await animatePhoto(imageBase64, storyText);
+      animationResult = await animatePhoto(imageBase64, storyText, animationStyle);
     } catch (error) {
       console.error('VEO 3 animation error details:', error);
       // Return a more helpful error message

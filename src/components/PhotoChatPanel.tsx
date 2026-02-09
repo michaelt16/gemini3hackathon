@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { useTheme } from '@/contexts/ThemeContext';
 
 interface Message {
   role: 'user' | 'assistant';
@@ -15,6 +16,8 @@ interface PhotoChatPanelProps {
 }
 
 export default function PhotoChatPanel({ photoId, photoUrl, onClose, onStoryUpdated }: PhotoChatPanelProps) {
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
@@ -124,7 +127,7 @@ export default function PhotoChatPanel({ photoId, photoUrl, onClose, onStoryUpda
       </div>
 
       {/* Chat side */}
-      <div className="w-1/2 flex flex-col bg-[#1a1816]">
+      <div className={`w-1/2 flex flex-col ${isDark ? 'bg-[#1a1816]' : 'bg-[var(--bg-primary)]'}`}>
         {/* Header */}
         <div className="p-4 border-b border-white/10 flex items-center justify-between">
           <div>

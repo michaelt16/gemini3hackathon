@@ -178,7 +178,7 @@ export default function ScrapbookModal({
           <div 
             className="relative rounded overflow-y-auto"
             style={{
-              background: 'linear-gradient(145deg, #f5f0e6 0%, #e8e0d0 50%, #ddd5c5 100%)',
+              background: 'linear-gradient(145deg, #ffffff 0%, #f5f5f7 50%, #e8e8ed 100%)',
               maxHeight: 'calc(90vh - 80px)',
             }}
           >
@@ -430,7 +430,7 @@ function ScrapbookPhoto({ photo, rotation, tapeStyle, tapeColor }: ScrapbookPhot
         >
           <div 
             className="max-w-lg w-full rounded-xl p-5 relative"
-            style={{ background: 'linear-gradient(145deg, #f5f0e6 0%, #e8e0d0 100%)' }}
+            style={{ background: 'linear-gradient(145deg, #ffffff 0%, #f5f5f7 100%)' }}
             onClick={(e) => e.stopPropagation()}
           >
             <button

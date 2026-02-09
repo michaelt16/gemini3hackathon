@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useCreateAlbum } from '@/contexts/CreateAlbumContext';
+import { useTheme } from '@/contexts/ThemeContext';
 
 const ALBUM_TYPES = [
   { 
@@ -30,6 +31,8 @@ const ALBUM_TYPES = [
 export default function CreateAlbumModal() {
   const { isOpen, closeModal } = useCreateAlbum();
   const router = useRouter();
+  const { theme } = useTheme();
+  const isLight = theme === 'light';
   const [name, setName] = useState('');
   const [date, setDate] = useState('');
   const [albumType, setAlbumType] = useState<'event' | 'theme'>('event');
@@ -77,18 +80,19 @@ export default function CreateAlbumModal() {
   return (
     <div
       className="fixed inset-0 z-[100] flex items-center justify-center p-4"
-      style={{ background: 'rgba(0,0,0,0.85)' }}
+      style={{ background: isLight ? 'rgba(0,0,0,0.4)' : 'rgba(0,0,0,0.85)' }}
       onClick={handleBackdropClick}
     >
       <div
         className="relative w-full max-w-lg rounded-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200"
-        style={{ background: '#141210' }}
+        style={{ background: isLight ? 'var(--bg-elevated)' : '#141210' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Close button */}
         <button
           onClick={closeModal}
-          className="absolute top-4 right-4 z-10 w-9 h-9 rounded-full flex items-center justify-center text-white/50 hover:text-white hover:bg-white/10 transition-all"
+          className="absolute top-4 right-4 z-10 w-9 h-9 rounded-full flex items-center justify-center transition-all"
+          style={{ color: isLight ? 'var(--text-tertiary)' : 'rgba(255,255,255,0.5)' }}
         >
           <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
@@ -102,18 +106,18 @@ export default function CreateAlbumModal() {
             style={{ background: 'linear-gradient(90deg, #22c55e 0%, #059669 50%, #10b981 100%)' }}
           />
           <h2 
-            className="text-2xl font-light text-white"
-            style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+            className="text-2xl font-light"
+            style={{ fontFamily: 'var(--font-crimson), Georgia, serif', color: isLight ? 'var(--text-primary)' : '#fff' }}
           >
             Create New Album
           </h2>
-          <p className="text-white/40 text-sm mt-1">Start preserving your memories</p>
+          <p className="text-sm mt-1" style={{ color: isLight ? 'var(--text-tertiary)' : 'rgba(255,255,255,0.4)' }}>Start preserving your memories</p>
         </div>
 
         <form onSubmit={handleSubmit} className="px-8 pb-8">
           {/* Album Name */}
           <div className="mb-5">
-            <label className="block text-xs font-medium text-white/50 uppercase tracking-wider mb-2">
+            <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: isLight ? 'var(--text-tertiary)' : 'rgba(255,255,255,0.5)' }}>
               Album Name
             </label>
             <input
@@ -121,10 +125,11 @@ export default function CreateAlbumModal() {
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. Summer 2024 Reunion"
-              className="w-full px-4 py-3.5 rounded-xl text-white placeholder:text-white/30 focus:outline-none focus:ring-2 focus:ring-green-500/50 transition-all"
+              className={`w-full px-4 py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 transition-all ${isLight ? 'placeholder:text-[#9e9586]' : 'placeholder:text-white/30'}`}
               style={{ 
-                background: 'rgba(255,255,255,0.05)', 
-                border: '1px solid rgba(255,255,255,0.08)' 
+                background: isLight ? 'var(--bg-secondary)' : 'rgba(255,255,255,0.05)', 
+                border: `1px solid ${isLight ? 'var(--border-subtle)' : 'rgba(255,255,255,0.08)'}`,
+                color: isLight ? 'var(--text-primary)' : '#fff',
               }}
               autoFocus
               required
@@ -133,25 +138,26 @@ export default function CreateAlbumModal() {
 
           {/* Date */}
           <div className="mb-6">
-            <label className="block text-xs font-medium text-white/50 uppercase tracking-wider mb-2">
+            <label className="block text-xs font-medium uppercase tracking-wider mb-2" style={{ color: isLight ? 'var(--text-tertiary)' : 'rgba(255,255,255,0.5)' }}>
               Date (optional)
             </label>
             <input
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="w-full px-4 py-3.5 rounded-xl text-white focus:outline-none focus:ring-2 focus:ring-green-500/50 transition-all"
+              className="w-full px-4 py-3.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-green-500/50 transition-all"
               style={{ 
-                background: 'rgba(255,255,255,0.05)', 
-                border: '1px solid rgba(255,255,255,0.08)',
-                colorScheme: 'dark'
+                background: isLight ? 'var(--bg-secondary)' : 'rgba(255,255,255,0.05)', 
+                border: `1px solid ${isLight ? 'var(--border-subtle)' : 'rgba(255,255,255,0.08)'}`,
+                color: isLight ? 'var(--text-primary)' : '#fff',
+                colorScheme: isLight ? 'light' : 'dark',
               }}
             />
           </div>
 
           {/* Album Type */}
           <div className="mb-6">
-            <label className="block text-xs font-medium text-white/50 uppercase tracking-wider mb-3">
+            <label className="block text-xs font-medium uppercase tracking-wider mb-3" style={{ color: isLight ? 'var(--text-tertiary)' : 'rgba(255,255,255,0.5)' }}>
               Album Type
             </label>
             <div className="grid grid-cols-2 gap-3">
@@ -161,13 +167,13 @@ export default function CreateAlbumModal() {
                   className={`relative flex flex-col items-center gap-2 p-4 rounded-xl cursor-pointer transition-all ${
                     albumType === opt.value
                       ? 'ring-2 ring-green-500/70'
-                      : 'hover:bg-white/[0.03]'
+                      : ''
                   }`}
                   style={{ 
                     background: albumType === opt.value 
                       ? 'rgba(34, 197, 94, 0.1)' 
-                      : 'rgba(255,255,255,0.03)',
-                    border: `1px solid ${albumType === opt.value ? 'rgba(34, 197, 94, 0.3)' : 'rgba(255,255,255,0.06)'}`
+                      : isLight ? 'var(--bg-secondary)' : 'rgba(255,255,255,0.03)',
+                    border: `1px solid ${albumType === opt.value ? 'rgba(34, 197, 94, 0.3)' : isLight ? 'var(--border-subtle)' : 'rgba(255,255,255,0.06)'}`
                   }}
                 >
                   <input
@@ -178,13 +184,13 @@ export default function CreateAlbumModal() {
                     onChange={() => setAlbumType(opt.value)}
                     className="sr-only"
                   />
-                  <div className={`${albumType === opt.value ? 'text-green-400' : 'text-white/40'}`}>
+                  <div style={{ color: albumType === opt.value ? '#4ade80' : isLight ? 'var(--text-tertiary)' : 'rgba(255,255,255,0.4)' }}>
                     {opt.icon}
                   </div>
-                  <span className={`text-sm font-medium ${albumType === opt.value ? 'text-white' : 'text-white/70'}`}>
+                  <span className="text-sm font-medium" style={{ color: albumType === opt.value ? (isLight ? 'var(--text-primary)' : '#fff') : (isLight ? 'var(--text-secondary)' : 'rgba(255,255,255,0.7)') }}>
                     {opt.label}
                   </span>
-                  <p className="text-[11px] text-white/40 text-center leading-tight">
+                  <p className="text-[11px] text-center leading-tight" style={{ color: isLight ? 'var(--text-tertiary)' : 'rgba(255,255,255,0.4)' }}>
                     {opt.description}
                   </p>
                 </label>
@@ -203,8 +209,11 @@ export default function CreateAlbumModal() {
             <button
               type="button"
               onClick={closeModal}
-              className="flex-1 py-3.5 px-4 rounded-xl text-white/60 hover:text-white hover:bg-white/5 transition-all text-sm font-medium"
-              style={{ border: '1px solid rgba(255,255,255,0.1)' }}
+              className="flex-1 py-3.5 px-4 rounded-xl transition-all text-sm font-medium"
+              style={{ 
+                border: `1px solid ${isLight ? 'var(--border-subtle)' : 'rgba(255,255,255,0.1)'}`,
+                color: isLight ? 'var(--text-secondary)' : 'rgba(255,255,255,0.6)',
+              }}
             >
               Cancel
             </button>

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "nextjs",
+  "functions": {
+    "src/app/api/animate-photo/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/animate-photo-grok/route.ts": {
+      "maxDuration": 300
+    },
+    "src/app/api/generate-narration/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/generate-story/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/events/[id]/narration/audio/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/events/[id]/storybook/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/voice/clone/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/stylize-photo/route.ts": {
+      "maxDuration": 120
+    },
+    "src/app/api/photos/[id]/extract-facts/route.ts": {
+      "maxDuration": 60
+    },
+    "src/app/api/nano-banana/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}

@@ -1,5 +1,7 @@
 'use client';
 
+import { useRef } from 'react';
+
 interface ControlsBarProps {
   // Camera
   cameraActive: boolean;
@@ -19,6 +21,9 @@ interface ControlsBarProps {
   onFinishSession: () => void;
   // Optional: hide finish button (for modal mode where it's in header)
   hideFinishButton?: boolean;
+  // Upload & sample photos
+  onUploadPhotos?: (files: FileList) => void;
+  onUseSamples?: () => void;
 }
 
 export function ControlsBar({
@@ -35,10 +40,66 @@ export function ControlsBar({
   photoCount,
   onFinishSession,
   hideFinishButton = false,
+  onUploadPhotos,
+  onUseSamples,
 }: ControlsBarProps) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   return (
     <div className="absolute bottom-0 left-0 right-0 z-20 p-6">
       <div className="flex items-center justify-center gap-4">
+
+        {/* Upload from device */}
+        {onUploadPhotos && (
+          <>
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                  onUploadPhotos(e.target.files);
+                  e.target.value = '';
+                }
+              }}
+            />
+            <button
+              onClick={() => fileInputRef.current?.click()}
+              disabled={!isConnected}
+              className={`w-14 h-14 rounded-full flex items-center justify-center transition-all ${
+                !isConnected
+                  ? 'bg-white/5 text-white/30 cursor-not-allowed'
+                  : 'bg-purple-500/20 border border-purple-400/40 text-purple-400 hover:bg-purple-500/30 hover:border-purple-400/60'
+              }`}
+              title="Upload photos from device"
+            >
+              <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+              </svg>
+            </button>
+          </>
+        )}
+
+        {/* Use sample photos */}
+        {onUseSamples && (
+          <button
+            onClick={onUseSamples}
+            disabled={!isConnected}
+            className={`h-14 px-4 rounded-full flex items-center justify-center gap-2 transition-all ${
+              !isConnected
+                ? 'bg-white/5 text-white/30 cursor-not-allowed'
+                : 'bg-amber-500/20 border border-amber-400/40 text-amber-400 hover:bg-amber-500/30 hover:border-amber-400/60'
+            }`}
+            title="Load sample family photos"
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+              <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M6.75 7.5h.008v.008H6.75V7.5z" />
+            </svg>
+            <span className="text-sm font-medium">Samples</span>
+          </button>
+        )}
         
         {/* Camera toggle */}
         <button

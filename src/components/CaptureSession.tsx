@@ -8,6 +8,8 @@ import { usePhotoScanner } from '@/hooks/use-photo-scanner';
 import { ScanOverlay, PhotoGallery, ControlsBar, AuroraWave } from '@/components/capture';
 import { getExtractionLabel, uploadPhotoToEvent, saveConversation, enhanceWithNanoBanana } from '@/lib/capture-utils';
 import EVAOrb from '@/components/EVAOrb';
+import { useTheme } from '@/contexts/ThemeContext';
+import { useCurrentUser } from '@/hooks/use-current-user';
 
 interface Message {
   id: string;
@@ -55,6 +57,43 @@ export interface CaptureSessionProps {
   onGreetingComplete?: () => void;
 }
 
+// Sample photos for judge/demo mode
+const SAMPLE_PHOTOS = [
+  '/pic1.PNG', '/pic2.PNG', '/pic3.PNG', '/pic4.PNG',
+  '/pic5.jpg', '/pic6.jpg', '/pic7.jpg', '/pic8.jpg', '/pic9.jpg',
+];
+
+/** Resize an image data URL to fit within maxDim, returns JPEG data URL */
+function resizeImage(dataUrl: string, maxDim = 1600): Promise<string> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width <= maxDim && height <= maxDim) {
+        // Already small enough — just re-encode as JPEG for consistency
+        const c = document.createElement('canvas');
+        c.width = width;
+        c.height = height;
+        const ctx = c.getContext('2d')!;
+        ctx.drawImage(img, 0, 0);
+        resolve(c.toDataURL('image/jpeg', 0.85));
+        return;
+      }
+      const scale = maxDim / Math.max(width, height);
+      width = Math.round(width * scale);
+      height = Math.round(height * scale);
+      const c = document.createElement('canvas');
+      c.width = width;
+      c.height = height;
+      const ctx = c.getContext('2d')!;
+      ctx.drawImage(img, 0, 0, width, height);
+      resolve(c.toDataURL('image/jpeg', 0.85));
+    };
+    img.onerror = () => resolve(dataUrl); // fallback
+    img.src = dataUrl;
+  });
+}
+
 /**
  * CaptureSession - Core capture experience
  * Can be used as a full page, inside a modal, or for telling stories about existing photos
@@ -72,6 +111,9 @@ export default function CaptureSession({
   onGreetingComplete,
 }: CaptureSessionProps) {
   const router = useRouter();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+  const { user: currentUser } = useCurrentUser();
   
   // Connection states
   const [isConnected, setIsConnected] = useState(false);
@@ -96,6 +138,7 @@ export default function CaptureSession({
   const [currentPhotoId, setCurrentPhotoId] = useState<string | null>(null);
   const [isFinishing, setIsFinishing] = useState(false);
   const [showGallery, setShowGallery] = useState(false);
+  const [showSamplePicker, setShowSamplePicker] = useState(false);
 
   // Event data
   const [eventData, setEventData] = useState<{
@@ -180,7 +223,7 @@ export default function CaptureSession({
     
     try {
       const conversationText = photoMessages
-        .map(m => `${m.role === 'user' ? 'User' : 'EVA'}: ${m.content}`)
+        .map(m => `${m.role === 'user' ? (currentUser.name || 'You') : 'EVA'}: ${m.content}`)
         .join('\n');
       
       const response = await fetch('/api/generate-recap', {
@@ -356,6 +399,95 @@ export default function CaptureSession({
   const handleCapturePhoto = useCallback(async () => {
     await capturePhoto('Manual capture');
   }, [capturePhoto]);
+
+  // Upload photos from device (file picker)
+  const handleUploadPhotos = useCallback((files: FileList) => {
+    Array.from(files).forEach((file) => {
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const rawData = reader.result as string;
+        if (!rawData) return;
+        // Resize to avoid API body-size limits
+        const imageData = await resizeImage(rawData);
+        const photoId = `upload-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        
+        // Generate recap for previous photo before adding new one
+        if (currentPhotoIdRef.current && messagesRef.current.length > 0) {
+          generateRecapForPhoto(currentPhotoIdRef.current);
+        }
+
+        const newPhoto: CapturedPhoto = {
+          id: photoId,
+          imageData,
+          timestamp: Date.now(),
+          extractionMethod: 'upload',
+          extractionQuality: 'original',
+        };
+        setCapturedPhotos(prev => [...prev, newPhoto]);
+        setCurrentPhotoId(photoId);
+        setShowGallery(true);
+
+        // Send to Live API so EVA can see and talk about it
+        if (liveClientRef.current?.connected) {
+          liveClientRef.current.sendTextWithImage(
+            'The user just uploaded this photo. Look at it and comment on what you see — ask them about the memory.',
+            imageData
+          );
+        }
+      };
+      reader.readAsDataURL(file);
+    });
+  }, [generateRecapForPhoto]);
+
+  // Toggle sample photo picker
+  const handleUseSamples = useCallback(() => {
+    setShowSamplePicker(prev => !prev);
+  }, []);
+
+  // Select a single sample photo
+  const handleSelectSample = useCallback(async (src: string) => {
+    setShowSamplePicker(false);
+    try {
+      const res = await fetch(src);
+      const blob = await res.blob();
+      const reader = new FileReader();
+      reader.onloadend = async () => {
+        const rawData = reader.result as string;
+        if (!rawData) return;
+        // Resize to avoid API body-size limits
+        const imageData = await resizeImage(rawData);
+        const photoId = `sample-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+
+        // Generate recap for previous photo before adding new one
+        if (currentPhotoIdRef.current && messagesRef.current.length > 0) {
+          generateRecapForPhoto(currentPhotoIdRef.current);
+        }
+
+        const newPhoto: CapturedPhoto = {
+          id: photoId,
+          imageData,
+          timestamp: Date.now(),
+          extractionMethod: 'sample',
+          extractionQuality: 'original',
+        };
+        setCapturedPhotos(prev => [...prev, newPhoto]);
+        setCurrentPhotoId(photoId);
+        setShowGallery(true);
+
+        // Send to Live API so EVA can see the photo
+        if (liveClientRef.current?.connected) {
+          liveClientRef.current.sendTextWithImage(
+            'The user loaded a sample family photo. Look at it and comment on what you see — ask them about the memory.',
+            imageData
+          );
+        }
+        showToast('Photo added!');
+      };
+      reader.readAsDataURL(blob);
+    } catch {
+      showToast('Failed to load sample photo');
+    }
+  }, [generateRecapForPhoto, showToast]);
 
   // Remove photo
   const removePhoto = useCallback(async (photoId: string, reason: 'delete' | 'retake') => {
@@ -632,6 +764,7 @@ BLURRY OR UNCLEAR IMAGES:
               role: m.role,
               content: m.content,
             })),
+            userName: currentUser.name || undefined,
           }),
         });
         
@@ -802,9 +935,9 @@ BLURRY OR UNCLEAR IMAGES:
   // Modal layout: split view with left (camera) and right (conversation)
   if (isModal) {
     return (
-      <div className="h-full flex flex-col bg-[#0a0a0f]">
+      <div className={`h-full flex flex-col ${isDark ? 'bg-[#0a0a0f]' : 'bg-[var(--bg-primary)]'}`}>
         {/* Header */}
-        <div className="h-14 bg-[#0d1117] border-b border-white/10 flex items-center justify-between px-4 flex-shrink-0">
+        <div className={`h-14 ${isDark ? 'bg-[#0d1117]' : 'bg-[var(--bg-elevated)]'} border-b border-white/10 flex items-center justify-between px-4 flex-shrink-0`}>
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-400 via-blue-500 to-purple-500 animate-pulse flex-shrink-0" />
             <div>
@@ -911,6 +1044,44 @@ BLURRY OR UNCLEAR IMAGES:
                   </div>
                 )}
                 
+                {/* Sample photo picker overlay */}
+                {showSamplePicker && (
+                  <div className="absolute inset-0 z-40 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-6">
+                    <div className="w-full max-w-lg">
+                      <div className="flex items-center justify-between mb-5">
+                        <h3 className="text-white text-lg font-medium">Select a sample photo</h3>
+                        <button
+                          onClick={() => setShowSamplePicker(false)}
+                          className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/60 hover:text-white transition-colors"
+                        >
+                          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                            <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                          </svg>
+                        </button>
+                      </div>
+                      <div className="grid grid-cols-3 gap-3">
+                        {SAMPLE_PHOTOS.map((src) => (
+                          <button
+                            key={src}
+                            onClick={() => handleSelectSample(src)}
+                            className="relative aspect-square rounded-xl overflow-hidden border-2 border-transparent hover:border-cyan-400 transition-all group"
+                          >
+                            <img src={src} alt="Sample" className="w-full h-full object-cover" />
+                            <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                              <span className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-sm font-medium bg-black/50 rounded-full px-3 py-1">
+                                Select
+                              </span>
+                            </div>
+                          </button>
+                        ))}
+                      </div>
+                      <p className="text-white/40 text-xs text-center mt-4">
+                        Click a photo to add it to your capture session
+                      </p>
+                    </div>
+                  </div>
+                )}
+
                 {/* Pre-connection state */}
                 {!isConnected && !isConnecting && (
                   <div className="absolute inset-0 flex items-center justify-center">
@@ -991,6 +1162,8 @@ BLURRY OR UNCLEAR IMAGES:
                       photoCount={capturedPhotos.length}
                       onFinishSession={finishSession}
                       hideFinishButton={true}
+                      onUploadPhotos={mode === 'capture' ? handleUploadPhotos : undefined}
+                      onUseSamples={mode === 'capture' ? handleUseSamples : undefined}
                     />
                   </div>
                 )}
@@ -999,7 +1172,7 @@ BLURRY OR UNCLEAR IMAGES:
           </div>
           
           {/* RIGHT: Conversation */}
-          <div className="w-[380px] flex flex-col border-l border-white/10 bg-[#0d1117]">
+          <div className={`w-[380px] flex flex-col border-l border-white/10 ${isDark ? 'bg-[#0d1117]' : 'bg-[var(--bg-secondary)]'}`}>
             {/* EVA orb + Aurora wave */}
             <div className="flex-shrink-0 relative">
               {/* Aurora wave behind */}
@@ -1238,6 +1411,44 @@ BLURRY OR UNCLEAR IMAGES:
         </div>
       )}
 
+      {/* Sample photo picker overlay (full-page mode) */}
+      {showSamplePicker && (
+        <div className="absolute inset-0 z-40 bg-black/80 backdrop-blur-sm flex flex-col items-center justify-center p-6">
+          <div className="w-full max-w-lg">
+            <div className="flex items-center justify-between mb-5">
+              <h3 className="text-white text-lg font-medium">Select a sample photo</h3>
+              <button
+                onClick={() => setShowSamplePicker(false)}
+                className="w-8 h-8 rounded-full bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/60 hover:text-white transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+                </svg>
+              </button>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {SAMPLE_PHOTOS.map((src) => (
+                <button
+                  key={src}
+                  onClick={() => handleSelectSample(src)}
+                  className="relative aspect-square rounded-xl overflow-hidden border-2 border-transparent hover:border-cyan-400 transition-all group"
+                >
+                  <img src={src} alt="Sample" className="w-full h-full object-cover" />
+                  <div className="absolute inset-0 bg-black/0 group-hover:bg-black/30 transition-colors flex items-center justify-center">
+                    <span className="opacity-0 group-hover:opacity-100 transition-opacity text-white text-sm font-medium bg-black/50 rounded-full px-3 py-1">
+                      Select
+                    </span>
+                  </div>
+                </button>
+              ))}
+            </div>
+            <p className="text-white/40 text-xs text-center mt-4">
+              Click a photo to add it to your capture session
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Pre-connection state */}
       {!isConnected && !isConnecting && (
         <div className="absolute inset-0 flex items-center justify-center z-10">
@@ -1310,6 +1521,8 @@ BLURRY OR UNCLEAR IMAGES:
         isFinishing={isFinishing}
         photoCount={capturedPhotos.length}
         onFinishSession={finishSession}
+        onUploadPhotos={mode === 'capture' ? handleUploadPhotos : undefined}
+        onUseSamples={mode === 'capture' ? handleUseSamples : undefined}
       />
 
       <style jsx global>{`

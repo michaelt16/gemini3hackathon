@@ -134,12 +134,20 @@ export async function DELETE(
       return NextResponse.json({ error: deleteError.message }, { status: 502 });
     }
 
-    // Try to remove from storage: public URL is .../public/event-photos/eventId/file.ext
+    // Only remove from storage if no other photo rows share the same file
     if (photo.original_url) {
-      const match = photo.original_url.match(/\/event-photos\/(.+)$/);
-      if (match?.[1]) {
-        const storagePath = decodeURIComponent(match[1]);
-        await supabase.storage.from(BUCKET).remove([storagePath]);
+      const { count } = await supabase
+        .from('photos')
+        .select('id', { count: 'exact', head: true })
+        .eq('original_url', photo.original_url);
+
+      if (count === 0) {
+        // No other photo references this file — safe to delete from storage
+        const match = photo.original_url.match(/\/event-photos\/(.+)$/);
+        if (match?.[1]) {
+          const storagePath = decodeURIComponent(match[1]);
+          await supabase.storage.from(BUCKET).remove([storagePath]);
+        }
       }
     }
 

@@ -1,1154 +1,1206 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
-import dynamic from 'next/dynamic';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import AlbumModal from '@/components/AlbumModal';
-import { GeminiLiveClient, getAuthToken } from '@/lib/gemini-live';
-import { AuroraWave } from '@/components/capture/AuroraWave';
+import { useTheme } from '@/contexts/ThemeContext';
+import { useCreateAlbum } from '@/contexts/CreateAlbumContext';
 
-// EVA Orb - loaded client-side only
-const EVAOrb = dynamic(() => import('@/components/EVAOrb'), { ssr: false });
+// ============================================================================
+// TYPES & DATA
+// ============================================================================
 
-// EVA Companion Modal - with Live API
-const EVACompanionModal = dynamic(() => import('@/components/EVACompanionModal'), { ssr: false });
-
-// Tutorial steps for album list page - EVA speaks in first person
-const ALBUM_LIST_TUTORIAL_STEPS = [
-  {
-    text: "Welcome back! This is your album library. Let me show you what's here.",
-    highlight: null,
-    position: 'center'
-  },
-  {
-    text: "Albums with the 'Film Ready' badge have been exported as videos. You can watch and share these completed memories anytime.",
-    highlight: 'films-ready',
-    position: 'left'
-  },
-  {
-    text: "Your other albums are in 'Your Memories'. You can continue adding photos and stories to any of them.",
-    highlight: 'memories',
-    position: 'left'
-  },
-  {
-    text: "Click on me anytime you want to create a new album. Just tell me what you'd like to call it, and I'll set it up for you.",
-    highlight: 'eva-orb',
-    position: 'bottom-right'
-  },
-  {
-    text: "You're all set! Every moment you capture, every story you tell—they become part of something lasting. I'm honored to help you preserve what matters. Whenever you're ready to add more memories, I'll be right here. Happy remembering.",
-    highlight: null,
-    position: 'center',
-    final: true
-  }
-];
-
-// SVG Icons
-const PlayIcon = ({ className = "w-5 h-5" }: { className?: string }) => (
-  <svg className={className} fill="currentColor" viewBox="0 0 24 24">
-    <path d="M8 5v14l11-7z" />
-  </svg>
-);
-
-const MicIcon = () => (
-  <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" />
-  </svg>
-);
-
-const ChevronLeftIcon = () => (
-  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
-  </svg>
-);
-
-const ChevronRightIcon = () => (
-  <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-  </svg>
-);
-
-// Album type (matches UI)
 interface Album {
   id: string;
   title: string;
   date: string;
   location: string;
   photoCount: number;
-  contributors: string[];
-  hasSummary: boolean;
   hasRecap: boolean;
   coverUrl: string | null;
-  videoUrl: string | null; // Exported video URL
+  videoUrl: string | null;
   storiesRecorded: number;
-  isPortrait?: boolean;
-  members?: AlbumMember[];
-  questionCount?: number;
+  members?: { id: string; name: string; avatar_color: string }[];
+  perspectiveCount?: number;
+  featuredQuote?: string;
+  featuredQuoteAuthor?: string;
 }
 
-// Family member in an album
-interface AlbumMember {
-  id: string;
-  name: string;
-  relationship?: string;
-  avatar_color: string;
-}
-
-
-// Mock family members for albums (Google Photos collab style)
-const MOCK_MEMBERS: AlbumMember[] = [
-  { id: 'm1', name: 'Sarah', relationship: 'daughter', avatar_color: '#f472b6' },
-  { id: 'm2', name: 'Michael', relationship: 'son', avatar_color: '#60a5fa' },
-  { id: 'm3', name: 'Emma', relationship: 'granddaughter', avatar_color: '#a78bfa' },
-  { id: 'm4', name: 'Mom', relationship: 'mother', avatar_color: '#fbbf24' },
-  { id: 'm5', name: 'Dad', relationship: 'father', avatar_color: '#34d399' },
-  { id: 'm6', name: 'Grandpa', relationship: 'grandfather', avatar_color: '#fb923c' },
-  { id: 'm7', name: 'Tom', relationship: 'son', avatar_color: '#22d3ee' },
-];
-
-// Memory Timeline mock events
-interface TimelineEvent {
-  id: string;
-  type: 'story' | 'question' | 'perspective' | 'photo' | 'film' | 'member';
-  title: string;
-  description: string;
-  albumTitle?: string;
-  member?: { name: string; color: string };
-  timestamp: string;
-  timeAgo: string;
-}
-
-const MOCK_TIMELINE_EVENTS: TimelineEvent[] = [
-  {
-    id: 't1',
-    type: 'perspective',
-    title: 'Sarah added her perspective',
-    description: 'On the beach photo from Summer Reunion',
-    albumTitle: 'Summer 2024 Reunion',
-    member: { name: 'Sarah', color: '#f472b6' },
-    timestamp: '2024-02-04T10:30:00',
-    timeAgo: '2 hours ago',
-  },
-  {
-    id: 't2',
-    type: 'question',
-    title: 'Michael asked a question',
-    description: '"Who\'s the kid on the left in this photo?"',
-    albumTitle: 'Childhood Memories',
-    member: { name: 'Michael', color: '#60a5fa' },
-    timestamp: '2024-02-04T09:15:00',
-    timeAgo: '3 hours ago',
-  },
-  {
-    id: 't3',
-    type: 'story',
-    title: 'New story recorded',
-    description: 'You told the story behind the lake house photo',
-    albumTitle: 'Summer 2024 Reunion',
-    timestamp: '2024-02-04T08:00:00',
-    timeAgo: '5 hours ago',
-  },
-  {
-    id: 't4',
-    type: 'film',
-    title: 'Film exported',
-    description: 'Christmas 2023 is now ready to watch',
-    albumTitle: 'Christmas 2023',
-    timestamp: '2024-02-03T18:30:00',
-    timeAgo: 'Yesterday',
-  },
-  {
-    id: 't5',
-    type: 'member',
-    title: 'Emma joined the family',
-    description: 'Now connected to your memories',
-    member: { name: 'Emma', color: '#a78bfa' },
-    timestamp: '2024-02-03T14:00:00',
-    timeAgo: 'Yesterday',
-  },
-  {
-    id: 't6',
-    type: 'photo',
-    title: '5 photos animated',
-    description: 'Beach Day album photos brought to life',
-    albumTitle: 'Beach Day',
-    timestamp: '2024-02-02T16:45:00',
-    timeAgo: '2 days ago',
-  },
-  {
-    id: 't7',
-    type: 'question',
-    title: 'You answered Emma\'s question',
-    description: 'About grandma\'s garden in the old house',
-    albumTitle: 'Childhood Memories',
-    member: { name: 'Emma', color: '#a78bfa' },
-    timestamp: '2024-02-01T11:20:00',
-    timeAgo: '3 days ago',
-  },
-  {
-    id: 't8',
-    type: 'perspective',
-    title: 'Mom shared a memory',
-    description: '"I remember this day so clearly..."',
-    albumTitle: "Grandma's 80th Birthday",
-    member: { name: 'Mom', color: '#fbbf24' },
-    timestamp: '2024-01-30T09:00:00',
-    timeAgo: '5 days ago',
-  },
-];
-
-const TIMELINE_ICONS: Record<TimelineEvent['type'], string> = {
-  story: '🎙️',
-  question: '❓',
-  perspective: '💭',
-  photo: '📷',
-  film: '🎬',
-  member: '👤',
-};
-
-// Mock albums for demo swimlanes (Films Ready, Needs More Stories, All Memories)
-const mockAlbums: Album[] = [
-  {
-    id: 'mock-1',
-    title: 'Summer 2024 Reunion',
-    date: '2024-07-15',
-    location: 'Lake Tahoe, CA',
-    photoCount: 12,
-    contributors: ['Mom', 'Dad', 'Sarah'],
-    hasSummary: true,
-    hasRecap: true,
-    coverUrl: '/testphoto.jpg',
-    videoUrl: '/remento.mp4',
-    storiesRecorded: 8,
-    members: [MOCK_MEMBERS[0], MOCK_MEMBERS[1], MOCK_MEMBERS[3], MOCK_MEMBERS[4]],
-  },
-  {
-    id: 'mock-2',
-    title: "Grandma's 80th Birthday",
-    date: '2024-03-22',
-    location: 'Chicago, IL',
-    photoCount: 8,
-    contributors: ['Uncle Joe', 'Aunt Mary'],
-    hasSummary: true,
-    hasRecap: false,
-    coverUrl: '/pic1.PNG',
-    videoUrl: null,
-    storiesRecorded: 5,
-    isPortrait: true,
-    members: [MOCK_MEMBERS[3], MOCK_MEMBERS[4], MOCK_MEMBERS[5]],
-  },
-  {
-    id: 'mock-3',
-    title: 'Christmas 2023',
-    date: '2023-12-25',
-    location: 'Home',
-    photoCount: 24,
-    contributors: ['Mom', 'Dad', 'Grandpa', 'Sarah', 'Tom'],
-    hasSummary: true,
-    hasRecap: true,
-    coverUrl: '/pic2.PNG',
-    videoUrl: '/remento.mp4',
-    storiesRecorded: 18,
-    members: [MOCK_MEMBERS[0], MOCK_MEMBERS[3], MOCK_MEMBERS[4], MOCK_MEMBERS[5], MOCK_MEMBERS[6]],
-  },
-  {
-    id: 'mock-4',
-    title: 'Spring Picnic',
-    date: '2024-04-10',
-    location: 'Central Park',
-    photoCount: 15,
-    contributors: ['Sarah', 'Tom'],
-    hasSummary: false,
-    hasRecap: false,
-    coverUrl: '/pic3.PNG',
-    videoUrl: null,
-    storiesRecorded: 3,
-    isPortrait: true,
-    members: [MOCK_MEMBERS[0], MOCK_MEMBERS[6]],
-  },
-  {
-    id: 'mock-5',
-    title: 'Beach Day',
-    date: '2024-06-20',
-    location: 'Santa Monica',
-    photoCount: 22,
-    contributors: ['Mom', 'Sarah'],
-    hasSummary: true,
-    hasRecap: false,
-    coverUrl: '/pic4.PNG',
-    videoUrl: null,
-    storiesRecorded: 12,
-    members: [MOCK_MEMBERS[0], MOCK_MEMBERS[3], MOCK_MEMBERS[2]],
-  },
-];
-
-// Map API event to Album
-function eventToAlbum(e: {
-  id: string;
-  title: string;
-  date_start: string | null;
-  location: string | null;
-  summary: string | null;
-  cover_url: string | null;
-  created_at: string;
-  photo_count: number;
-  stories_count?: number;
-  video_url?: string | null;
-}): Album {
+function eventToAlbum(e: any): Album {
+  const storiesCount = e.stories_count ?? 0;
+  const members = (e.members || []).map((m: any, i: number) => ({
+    id: m.id || `${m.name}-${i}`,
+    name: m.name,
+    avatar_color: m.avatar_color || '#06b6d4',
+  }));
   return {
-    id: e.id,
-    title: e.title,
-    date: e.date_start || e.created_at?.slice(0, 10) || '',
-    location: e.location || '',
-    photoCount: e.photo_count ?? 0,
-    contributors: [],
-    hasSummary: !!e.summary,
-    hasRecap: !!e.video_url, // Film is ready when video_url exists
-    coverUrl: e.cover_url ?? null,
-    videoUrl: e.video_url ?? null, // Exported video URL
-    storiesRecorded: e.stories_count ?? 0,
-    isPortrait: false,
-    members: MOCK_MEMBERS.slice(0, 3), // Mock members for API albums
+    id: e.id, title: e.title,
+    date: e.date_start 
+      ? new Date(e.date_start).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) 
+      : (e.created_at ? new Date(e.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : ''),
+    location: e.location || '', photoCount: e.photo_count ?? 0, hasRecap: !!e.video_url,
+    coverUrl: e.cover_url ?? null, videoUrl: e.video_url ?? null, storiesRecorded: storiesCount,
+    perspectiveCount: members.length > 0 ? members.length : (storiesCount > 0 ? Math.min(storiesCount, 3) : 0),
+    featuredQuote: e.summary || undefined, 
+    featuredQuoteAuthor: e.summary && members.length > 0 ? members[0].name : (storiesCount > 0 ? 'Family' : undefined),
+    members,
   };
 }
 
-// Swimlane Row Component
-function SwimlaneRow({ 
-  title, 
-  albums, 
-  onAlbumClick 
-}: { 
-  title: string; 
-  albums: Album[]; 
-  onAlbumClick: (album: Album) => void;
-}) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [showLeftArrow, setShowLeftArrow] = useState(false);
-  const [showRightArrow, setShowRightArrow] = useState(true);
+// ============================================================================
+// ICONS
+// ============================================================================
 
-  const scroll = (direction: 'left' | 'right') => {
-    if (scrollRef.current) {
-      const scrollAmount = scrollRef.current.clientWidth * 0.8;
-      scrollRef.current.scrollBy({
+const PlayIcon = () => <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>;
+const PlayLargeIcon = () => <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M8 5v14l11-7z" /></svg>;
+const PauseIcon = () => <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24"><path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" /></svg>;
+const VolumeIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /></svg>;
+const VolumeMuteIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" /><path strokeLinecap="round" strokeLinejoin="round" d="M17 14l2-2m0 0l2-2m-2 2l-2-2m2 2l2 2" /></svg>;
+const FullscreenIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4" /></svg>;
+const CloseIcon = () => <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>;
+const GridIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" /></svg>;
+const FilmIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125M3.375 19.5h1.5C5.496 19.5 6 18.996 6 18.375m-3.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-1.5A1.125 1.125 0 0118 18.375M20.625 4.5H3.375m17.25 0c.621 0 1.125.504 1.125 1.125M20.625 4.5h-1.5C18.504 4.5 18 5.004 18 5.625m3.75 0v1.5c0 .621-.504 1.125-1.125 1.125M3.375 4.5c-.621 0-1.125.504-1.125 1.125M3.375 4.5h1.5C5.496 4.5 6 5.004 6 5.625m-3.75 0v1.5c0 .621.504 1.125 1.125 1.125m0 0h1.5m-1.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m1.5-3.75C5.496 8.25 6 7.746 6 7.125v-1.5M4.875 8.25C5.496 8.25 6 8.754 6 9.375v1.5m0-5.25v5.25m0-5.25C6 5.004 6.504 4.5 7.125 4.5h9.75c.621 0 1.125.504 1.125 1.125m1.125 2.625h1.5m-1.5 0A1.125 1.125 0 0118 7.125v-1.5m1.125 2.625c-.621 0-1.125.504-1.125 1.125v1.5m2.625-2.625c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125M18 5.625v5.25M7.125 12h9.75m-9.75 0A1.125 1.125 0 016 10.875M7.125 12C6.504 12 6 12.504 6 13.125m0-2.25C6 11.496 5.496 12 4.875 12M18 10.875c0 .621-.504 1.125-1.125 1.125M18 10.875c0 .621.504 1.125 1.125 1.125m-2.25 0c.621 0 1.125.504 1.125 1.125m-12 5.25v-5.25m0 5.25c0 .621.504 1.125 1.125 1.125h9.75c.621 0 1.125-.504 1.125-1.125m-12 0v-1.5c0-.621-.504-1.125-1.125-1.125M18 18.375v-5.25m0 5.25v-1.5c0-.621.504-1.125 1.125-1.125M18 13.125v1.5c0 .621.504 1.125 1.125 1.125M18 13.125c0-.621.504-1.125 1.125-1.125M6 13.125v1.5c0 .621-.504 1.125-1.125 1.125M6 13.125C6 12.504 5.496 12 4.875 12m-1.5 0h1.5m-1.5 0c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125M19.125 12h1.5m0 0c.621 0 1.125.504 1.125 1.125v1.5c0 .621-.504 1.125-1.125 1.125m-17.25 0h1.5m14.25 0h1.5" /></svg>;
+const TimelineIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" /></svg>;
+const PlusIcon = () => <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>;
+const ChevronLeft = () => <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" /></svg>;
+const ChevronRight = () => <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>;
+const PhotoIcon = () => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" /></svg>;
+const MicIcon = () => <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M12 18.75a6 6 0 006-6v-1.5m-6 7.5a6 6 0 01-6-6v-1.5m6 7.5v3.75m-3.75 0h7.5M12 15.75a3 3 0 01-3-3V4.5a3 3 0 116 0v8.25a3 3 0 01-3 3z" /></svg>;
+const RewindIcon = () => <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M12.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0019 16V8a1 1 0 00-1.6-.8l-5.333 4zM4.066 11.2a1 1 0 000 1.6l5.334 4A1 1 0 0011 16V8a1 1 0 00-1.6-.8l-5.334 4z" /></svg>;
+const ForwardIcon = () => <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M11.933 12.8a1 1 0 000-1.6L6.6 7.2A1 1 0 005 8v8a1 1 0 001.6.8l5.333-4zM19.933 12.8a1 1 0 000-1.6l-5.333-4A1 1 0 0013 8v8a1 1 0 001.6.8l5.333-4z" /></svg>;
+
+type ViewMode = 'cinema' | 'grid' | 'timeline';
+
+// ============================================================================
+// HELPER: Format time
+// ============================================================================
+function formatTime(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60);
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
+}
+
+// ============================================================================
+// MAIN PAGE
+// ============================================================================
+
+export default function AlbumPage() {
+  const router = useRouter();
+  const { theme } = useTheme();
+  const isDark = theme === 'dark';
+  const { openModal: openCreateAlbum } = useCreateAlbum();
+  const [allAlbums, setAllAlbums] = useState<Album[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
+  const [featuredAlbum, setFeaturedAlbum] = useState<Album | null>(null);
+  const [viewModeState, setViewModeState] = useState<ViewMode>('cinema');
+  
+  // Custom setter that handles featured album when switching modes
+  const setViewMode = (mode: ViewMode) => {
+    setViewModeState(mode);
+    // When switching to cinema, ensure we have a valid film selected
+    if (mode === 'cinema') {
+      const films = allAlbums.filter(a => a.hasRecap && a.videoUrl);
+      if (films.length > 0 && (!featuredAlbum || !featuredAlbum.hasRecap)) {
+        setFeaturedAlbum(films[0]);
+      }
+    }
+  };
+  const [showModal, setShowModal] = useState(false);
+  const [isTransitioning, setIsTransitioning] = useState(false);
+  
+  // Video player state
+  const [isPlayingVideo, setIsPlayingVideo] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const [showControls, setShowControls] = useState(true);
+  const [isBuffering, setIsBuffering] = useState(false);
+  
+  // Drag-to-reorder state for carousel
+  const [draggedAlbumId, setDraggedAlbumId] = useState<string | null>(null);
+  const [dragOverAlbumId, setDragOverAlbumId] = useState<string | null>(null);
+  
+  // Netflix-style hover preview (carousel)
+  const [hoveredAlbumId, setHoveredAlbumId] = useState<string | null>(null);
+  const hoverVideoRefs = useRef<Record<string, HTMLVideoElement | null>>({});
+  const hoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  
+  // Netflix-style hero hover preview (big screen)
+  const [isHeroHovered, setIsHeroHovered] = useState(false);
+  const heroPreviewRef = useRef<HTMLVideoElement>(null);
+  const heroHoverTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const carouselRef = useRef<HTMLDivElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    async function fetchEvents() {
+      try {
+        const res = await fetch('/api/events');
+        if (res.ok) {
+          const data = await res.json();
+          if (Array.isArray(data)) setAllAlbums(data.map(eventToAlbum));
+        }
+      } catch { /* empty on error */ }
+      finally { setLoading(false); }
+    }
+    fetchEvents();
+  }, []);
+  
+  // Albums with films for cinema mode
+  const filmsOnly = allAlbums.filter(a => a.hasRecap && a.videoUrl);
+  
+  // Set initial featured album (only films for cinema mode)
+  useEffect(() => {
+    if (filmsOnly.length > 0 && !featuredAlbum) {
+      setFeaturedAlbum(filmsOnly[0]);
+    } else if (filmsOnly.length > 0 && featuredAlbum && !filmsOnly.find(f => f.id === featuredAlbum.id)) {
+      setFeaturedAlbum(filmsOnly[0]);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allAlbums]);
+
+  // Video event handlers
+  useEffect(() => {
+    const video = videoRef.current;
+    if (!video) return;
+
+    const handleTimeUpdate = () => setCurrentTime(video.currentTime);
+    const handleDurationChange = () => setDuration(video.duration);
+    const handlePlay = () => setIsPlaying(true);
+    const handlePause = () => setIsPlaying(false);
+    const handleWaiting = () => setIsBuffering(true);
+    const handleCanPlay = () => setIsBuffering(false);
+    const handleEnded = () => {
+      setIsPlaying(false);
+      setShowControls(true);
+    };
+
+    video.addEventListener('timeupdate', handleTimeUpdate);
+    video.addEventListener('durationchange', handleDurationChange);
+    video.addEventListener('play', handlePlay);
+    video.addEventListener('pause', handlePause);
+    video.addEventListener('waiting', handleWaiting);
+    video.addEventListener('canplay', handleCanPlay);
+    video.addEventListener('ended', handleEnded);
+
+    return () => {
+      video.removeEventListener('timeupdate', handleTimeUpdate);
+      video.removeEventListener('durationchange', handleDurationChange);
+      video.removeEventListener('play', handlePlay);
+      video.removeEventListener('pause', handlePause);
+      video.removeEventListener('waiting', handleWaiting);
+      video.removeEventListener('canplay', handleCanPlay);
+      video.removeEventListener('ended', handleEnded);
+    };
+  }, [isPlayingVideo]);
+
+  // Auto-hide controls
+  const handleMouseMove = () => {
+    setShowControls(true);
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    if (isPlaying) {
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowControls(false);
+      }, 3000);
+    }
+  };
+
+  const scrollCarousel = (direction: 'left' | 'right') => {
+    if (carouselRef.current) {
+      const scrollAmount = 400;
+      carouselRef.current.scrollBy({
         left: direction === 'left' ? -scrollAmount : scrollAmount,
         behavior: 'smooth'
       });
     }
   };
 
-  const handleScroll = () => {
-    if (scrollRef.current) {
-      setShowLeftArrow(scrollRef.current.scrollLeft > 0);
-      setShowRightArrow(
-        scrollRef.current.scrollLeft < 
-        scrollRef.current.scrollWidth - scrollRef.current.clientWidth - 10
-      );
+  const handleAlbumSelect = (album: Album) => {
+    if (isPlayingVideo) {
+      closeVideoPlayer();
     }
-  };
-
-  if (albums.length === 0) return null;
-
-  return (
-    <div className="mb-12 group/row relative">
-      <div className="px-[4%] mb-3">
-        <h2 className="text-lg md:text-xl text-white/90 font-medium tracking-tight">
-          {title}
-        </h2>
-      </div>
-      
-      <div className="relative">
-        {/* Left Arrow - Netflix style */}
-        {showLeftArrow && (
-          <button 
-            onClick={() => scroll('left')}
-            className="absolute left-0 top-0 bottom-0 z-20 w-14 bg-black/50 hover:bg-black/70 flex items-center justify-center text-white opacity-0 group-hover/row:opacity-100 transition-all"
-          >
-            <ChevronLeftIcon />
-          </button>
-        )}
-        
-        {/* Right Arrow - Netflix style */}
-        {showRightArrow && (
-          <button 
-            onClick={() => scroll('right')}
-            className="absolute right-0 top-0 bottom-0 z-20 w-14 bg-black/50 hover:bg-black/70 flex items-center justify-center text-white opacity-0 group-hover/row:opacity-100 transition-all"
-          >
-            <ChevronRightIcon />
-          </button>
-        )}
-        
-        {/* Scrollable row - Netflix spacing */}
-        <div 
-          ref={scrollRef}
-          onScroll={handleScroll}
-          className="flex gap-6 overflow-x-auto scrollbar-hide px-[4%] py-2"
-          style={{ scrollbarWidth: 'none', msOverflowStyle: 'none' }}
-        >
-          {albums.map((album) => (
-            <AlbumCard 
-              key={album.id} 
-              album={album} 
-              onClick={() => onAlbumClick(album)}
-            />
-          ))}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Album Card Component - Netflix-style swimlane cards
-function AlbumCard({ album, onClick }: { album: Album; onClick: () => void }) {
-  return (
-    <div 
-      onClick={onClick}
-      className="flex-shrink-0 w-[360px] md:w-[420px] lg:w-[480px] group cursor-pointer transition-transform duration-300 hover:scale-105 hover:z-10"
-    >
-      <div 
-        className="relative overflow-hidden rounded"
-        style={{ aspectRatio: '16/9' }}
-      >
-        {album.coverUrl ? (
-          album.isPortrait ? (
-            <>
-              <img 
-                src={album.coverUrl}
-                alt=""
-                loading="lazy"
-                className="absolute inset-0 w-full h-full object-cover scale-150 blur-xl opacity-60"
-              />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <img 
-                  src={album.coverUrl}
-                  alt={album.title}
-                  loading="lazy"
-                  className="h-full w-auto object-contain"
-                />
-              </div>
-            </>
-          ) : (
-            <img 
-              src={album.coverUrl}
-              alt={album.title}
-              loading="lazy"
-              className="w-full h-full object-cover"
-            />
-          )
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center bg-[#2a2a2a]">
-            <div className="flex flex-col items-center gap-2 text-white/30">
-              <svg className="w-12 h-12" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
-              </svg>
-              <span className="text-sm">Add photos</span>
-            </div>
-          </div>
-        )}
-        
-        {/* Gradient overlay - always visible at bottom */}
-        <div className="absolute inset-x-0 bottom-0 h-2/3 bg-gradient-to-t from-black/90 via-black/50 to-transparent pointer-events-none" />
-        
-        {/* Info overlay - bottom of card */}
-        <div className="absolute bottom-0 left-0 right-0 p-4">
-          <h3 className="text-white font-semibold text-base truncate drop-shadow-lg">
-            {album.title}
-          </h3>
-          <div className="flex items-center gap-2 mt-1.5 text-white/70 text-sm flex-wrap">
-            <span>{album.photoCount} photos</span>
-            <span className="text-white/40">·</span>
-            <span>{album.storiesRecorded} stories</span>
-            {album.members && album.members.length > 0 && (
-              <>
-                <span className="text-white/40">·</span>
-                <div className="flex items-center gap-1.5">
-                  <div className="flex -space-x-2">
-                    {album.members.slice(0, 4).map((m) => (
-                      <div
-                        key={m.id}
-                        className="w-5 h-5 rounded-full border-2 border-black/50 flex items-center justify-center text-white text-[8px] font-medium flex-shrink-0 shadow"
-                        style={{ backgroundColor: m.avatar_color }}
-                        title={m.name}
-                      >
-                        {m.name.charAt(0)}
-                      </div>
-                    ))}
-                  </div>
-                  <span>{album.members.length} members</span>
-                </div>
-              </>
-            )}
-          </div>
-        </div>
-        
-        {/* Film badge */}
-        {album.hasRecap && (
-          <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded bg-green-500">
-            <PlayIcon className="w-3.5 h-3.5 text-white" />
-            <span className="text-xs text-white font-medium">Film Ready</span>
-          </div>
-        )}
-        
-        {/* Hover border effect */}
-        <div className="absolute inset-0 rounded border-2 border-white/0 group-hover:border-white/30 transition-colors pointer-events-none" />
-      </div>
-    </div>
-  );
-}
-
-export default function AlbumPage() {
-  const [albums, setAlbums] = useState<Album[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [selectedAlbum, setSelectedAlbum] = useState<Album | null>(null);
-  const [heroHovered, setHeroHovered] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  
-  
-  // EVA companion modal state
-  const [showEvaModal, setShowEvaModal] = useState(false);
-  const [showTimeline, setShowTimeline] = useState(false);
-  
-  // Tutorial state
-  const [showTutorial, setShowTutorial] = useState(false);
-  const [tutorialStep, setTutorialStep] = useState(0);
-  const [tutorialText, setTutorialText] = useState('');
-  const liveClientRef = useRef<GeminiLiveClient | null>(null);
-  const [isLiveConnected, setIsLiveConnected] = useState(false);
-  const [isLiveConnecting, setIsLiveConnecting] = useState(false);
-  const [isTutorialSpeaking, setIsTutorialSpeaking] = useState(false);
-  const pendingTutorialTextRef = useRef<string | null>(null);
-  const pendingTutorialCallbackRef = useRef<(() => void) | null>(null);
-  const tutorialTypewriterRef = useRef<NodeJS.Timeout | null>(null);
-  const tutorialStartedRef = useRef(false);
-  
-  // Connect to Live API for tutorial voice
-  const connectLiveAPI = useCallback(async (): Promise<boolean> => {
-    if (isLiveConnecting || isLiveConnected) return isLiveConnected;
-    
-    setIsLiveConnecting(true);
-    
-    try {
-      const auth = await getAuthToken();
-      const apiKey = auth.apiKey || auth.token;
-      if (!apiKey) throw new Error('Failed to get API credentials');
-      
-      return new Promise((resolve) => {
-        const client = new GeminiLiveClient(apiKey, {
-          responseModalities: ['AUDIO'],
-          systemInstruction: `You are EVA, a warm AI companion for Living Memory. 
-When asked to say something, speak it exactly as written with natural, warm delivery.
-Keep responses brief. Do not add any extra commentary.`,
-          speechConfig: {
-            voiceConfig: {
-              prebuiltVoiceConfig: {
-                voiceName: 'Kore',
-              },
-            },
-          },
-        }, {
-          onConnect: () => {
-            console.log('[Album List Tutorial] Live API connected');
-            setIsLiveConnected(true);
-            setIsLiveConnecting(false);
-            liveClientRef.current = client;
-            resolve(true);
-          },
-          onDisconnect: () => {
-            setIsLiveConnected(false);
-          },
-          onAudio: () => {
-            setIsTutorialSpeaking(true);
-            // Start typewriter when audio starts
-            if (pendingTutorialTextRef.current) {
-              const text = pendingTutorialTextRef.current;
-              pendingTutorialTextRef.current = null;
-              // Clear any existing typewriter
-              if (tutorialTypewriterRef.current) {
-                clearInterval(tutorialTypewriterRef.current);
-                tutorialTypewriterRef.current = null;
-              }
-              // Typewriter synced with voice
-              setTutorialText('');
-              const chars = text.split('');
-              let i = 0;
-              const duration = Math.max(3000, text.length * 60);
-              const msPerChar = Math.max(15, duration / chars.length);
-              tutorialTypewriterRef.current = setInterval(() => {
-                if (i < chars.length) {
-                  const char = chars[i];
-                  setTutorialText(prev => prev + char);
-                  i++;
-                } else {
-                  if (tutorialTypewriterRef.current) {
-                    clearInterval(tutorialTypewriterRef.current);
-                    tutorialTypewriterRef.current = null;
-                  }
-                }
-              }, msPerChar);
-            }
-          },
-          onTurnComplete: () => {
-            setIsTutorialSpeaking(false);
-            // Call pending callback if any
-            if (pendingTutorialCallbackRef.current) {
-              const cb = pendingTutorialCallbackRef.current;
-              pendingTutorialCallbackRef.current = null;
-              cb();
-            }
-          },
-          onError: (error) => {
-            console.error('[Album List Tutorial] Live API error:', error);
-            setIsLiveConnecting(false);
-            resolve(false);
-          },
-        });
-        
-        client.connect().catch(() => {
-          setIsLiveConnecting(false);
-          resolve(false);
-        });
-      });
-    } catch (error) {
-      console.error('Failed to connect Live API:', error);
-      setIsLiveConnecting(false);
-      return false;
-    }
-  }, [isLiveConnecting, isLiveConnected]);
-  
-  // Disconnect Live API
-  const disconnectLiveAPI = useCallback(() => {
-    if (liveClientRef.current) {
-      liveClientRef.current.disconnect();
-      liveClientRef.current = null;
-    }
-    setIsLiveConnected(false);
-  }, []);
-  
-  // Speak tutorial text with Live API
-  const speakTutorialText = useCallback((text: string, onComplete?: () => void) => {
-    // Clear any existing typewriter first
-    if (tutorialTypewriterRef.current) {
-      clearInterval(tutorialTypewriterRef.current);
-      tutorialTypewriterRef.current = null;
-    }
-    
-    if (!liveClientRef.current?.connected) {
-      // Fallback: just typewriter
-      setTutorialText('');
-      const chars = text.split('');
-      let i = 0;
-      tutorialTypewriterRef.current = setInterval(() => {
-        if (i < chars.length) {
-          const char = chars[i];
-          setTutorialText(prev => prev + char);
-          i++;
-        } else {
-          if (tutorialTypewriterRef.current) {
-            clearInterval(tutorialTypewriterRef.current);
-            tutorialTypewriterRef.current = null;
-          }
-          onComplete?.();
-        }
-      }, 25);
-      return;
-    }
-    
-    // Use Live API
-    pendingTutorialTextRef.current = text;
-    pendingTutorialCallbackRef.current = onComplete || null;
-    liveClientRef.current.sendText(`Say exactly: "${text}"`);
-  }, []);
-  
-  // Play tutorial step
-  const playTutorialStep = useCallback((step: number) => {
-    if (step >= ALBUM_LIST_TUTORIAL_STEPS.length) {
-      setShowTutorial(false);
-      disconnectLiveAPI();
-      localStorage.removeItem('albumListTutorial');
-      localStorage.removeItem('tutorialMode');
-      return;
-    }
-    
-    setTutorialStep(step);
-    const stepData = ALBUM_LIST_TUTORIAL_STEPS[step];
-    setTutorialText('');
-    
-    // Speak with Live API (falls back to typewriter if not connected)
-    speakTutorialText(stepData.text);
-  }, [speakTutorialText, disconnectLiveAPI]);
-  
-  // Advance to next tutorial step
-  const advanceTutorial = useCallback(() => {
-    const nextStep = tutorialStep + 1;
-    if (nextStep < ALBUM_LIST_TUTORIAL_STEPS.length) {
-      playTutorialStep(nextStep);
+    if (viewModeState === 'cinema') {
+      if (featuredAlbum?.id !== album.id) {
+        setIsTransitioning(true);
+        setTimeout(() => {
+          setFeaturedAlbum(album);
+          setTimeout(() => setIsTransitioning(false), 50);
+        }, 300);
+      }
     } else {
-      setShowTutorial(false);
-      disconnectLiveAPI();
-      localStorage.removeItem('albumListTutorial');
-      localStorage.removeItem('tutorialMode');
+      router.push(`/album/${album.id}`);
     }
-  }, [tutorialStep, playTutorialStep, disconnectLiveAPI]);
-  
-  // Skip tutorial
-  const skipTutorial = useCallback(() => {
-    setShowTutorial(false);
-    disconnectLiveAPI();
-    localStorage.removeItem('albumListTutorial');
-    localStorage.removeItem('tutorialMode');
-  }, [disconnectLiveAPI]);
-  
-  // Check for tutorial continuation from album editor
-  useEffect(() => {
-    const shouldShowTutorial = localStorage.getItem('albumListTutorial') === 'true';
-    if (shouldShowTutorial && !tutorialStartedRef.current && !loading) {
-      tutorialStartedRef.current = true;
-      localStorage.removeItem('albumListTutorial');
-      
-      // Small delay then start tutorial
-      const timer = setTimeout(async () => {
-        await connectLiveAPI();
-        setShowTutorial(true);
-        playTutorialStep(0);
-      }, 500);
-      
-      return () => clearTimeout(timer);
-    }
-  }, [loading, connectLiveAPI, playTutorialStep]);
-  
-  // Cleanup Live API on unmount
-  useEffect(() => {
-    return () => {
-      if (liveClientRef.current) {
-        liveClientRef.current.disconnect();
-        liveClientRef.current = null;
-      }
-      if (tutorialTypewriterRef.current) {
-        clearInterval(tutorialTypewriterRef.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    async function fetchEvents() {
-      try {
-        const res = await fetch('/api/events');
-        if (!res.ok) throw new Error(await res.text());
-        const data = await res.json();
-        if (!cancelled && Array.isArray(data)) {
-          setAlbums(data.map(eventToAlbum));
-        }
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load albums');
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    fetchEvents();
-    return () => { cancelled = true; };
-  }, []);
-
-
-  // Your Films Ready = only albums with video. Your Memories = all albums.
-  const sortByPhotoCount = (a: Album[]) => [...a].sort((x, y) => y.photoCount - x.photoCount);
-  const yourFilmsReady = sortByPhotoCount(albums.filter((a) => a.hasRecap));
-  const yourMemories = sortByPhotoCount(albums);
-  
-  const categories = [
-    { title: 'Your Films Ready', albums: yourFilmsReady },
-    { title: 'Your Memories', albums: yourMemories },
-    // Demo content below
-    { title: 'Demo: Films Ready', albums: sortByPhotoCount(mockAlbums.filter((a) => a.hasRecap)) },
-    { title: 'Demo: Needs More Stories', albums: sortByPhotoCount(mockAlbums.filter((a) => !a.hasRecap && a.storiesRecorded < 5)) },
-    { title: 'Demo: All Memories', albums: sortByPhotoCount(mockAlbums) },
-  ];
-  
-  // Hero is the album with the most photos from user's albums, fallback to mock
-  const featuredAlbum = albums.length > 0
-    ? [...albums].sort((a, b) => b.photoCount - a.photoCount)[0]
-    : mockAlbums.find((a) => a.hasRecap) || mockAlbums[0];
-
-  const handleAlbumClick = (album: Album) => {
-    setSelectedAlbum(album);
   };
 
-  // Play video on hover
-  useEffect(() => {
+  const currentIndex = featuredAlbum ? filmsOnly.findIndex(a => a.id === featuredAlbum.id) : 0;
+  const navigateAlbum = (direction: 'prev' | 'next') => {
+    if (isPlayingVideo) return;
+    const newIndex = direction === 'prev' 
+      ? (currentIndex - 1 + filmsOnly.length) % filmsOnly.length
+      : (currentIndex + 1) % filmsOnly.length;
+    handleAlbumSelect(filmsOnly[newIndex]);
+  };
+
+  // Video player controls
+  const playVideo = () => {
+    if (featuredAlbum?.videoUrl) {
+      setIsPlayingVideo(true);
+      setCurrentTime(0);
+      setTimeout(() => {
+        videoRef.current?.play();
+      }, 100);
+    }
+  };
+
+  const closeVideoPlayer = () => {
     if (videoRef.current) {
-      if (heroHovered) {
-        videoRef.current.play();
-      } else {
+      videoRef.current.pause();
+      videoRef.current.currentTime = 0;
+    }
+    setIsPlayingVideo(false);
+    setIsPlaying(false);
+    setCurrentTime(0);
+  };
+
+  const togglePlayPause = () => {
+    if (videoRef.current) {
+      if (isPlaying) {
         videoRef.current.pause();
-        videoRef.current.currentTime = 0;
+      } else {
+        videoRef.current.play();
       }
     }
-  }, [heroHovered]);
+  };
 
-  return (
-    <div className="min-h-screen" style={{ background: '#0d0b09' }}>
-      {/* Subtle grain */}
-      <div 
-        className="fixed inset-0 pointer-events-none z-40 opacity-[0.015]"
-        style={{
-          backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E")`
-        }}
-      />
+  const toggleMute = () => {
+    if (videoRef.current) {
+      videoRef.current.muted = !isMuted;
+      setIsMuted(!isMuted);
+    }
+  };
 
-      {error && (
-        <div className="p-4 text-center bg-red-500/10 border-b border-red-500/30 text-red-300 text-sm">
-          {error}
-        </div>
-      )}
+  const seekTo = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (videoRef.current && duration) {
+      const rect = e.currentTarget.getBoundingClientRect();
+      const pos = (e.clientX - rect.left) / rect.width;
+      videoRef.current.currentTime = pos * duration;
+    }
+  };
 
-      {/* Hero Section */}
-      <div 
-        className="relative h-[85vh] overflow-hidden"
-        onMouseEnter={() => setHeroHovered(true)}
-        onMouseLeave={() => setHeroHovered(false)}
-      >
-        {/* Background */}
-        <div className="absolute inset-0">
-          {featuredAlbum?.coverUrl ? (
-            <img 
-              src={featuredAlbum.coverUrl}
-              alt={featuredAlbum.title}
-              loading="eager"
-              className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${
-                heroHovered ? 'opacity-0' : 'opacity-100'
-              }`}
-            />
-          ) : (
-            <div 
-              className={`absolute inset-0 bg-gradient-to-br from-neutral-900 via-neutral-800 to-neutral-900 transition-opacity duration-500 ${
-                heroHovered ? 'opacity-0' : 'opacity-100'
-              }`}
-            />
-          )}
-          
-          {/* Play the featured album's video on hover */}
-          <video
-            ref={videoRef}
-            src={featuredAlbum?.videoUrl || '/remento.mp4'}
-            muted
-            loop
-            playsInline
-            preload="none"
-            className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${
-              heroHovered ? 'opacity-100' : 'opacity-0'
-            }`}
-          />
-        </div>
-        
-        {/* Gradient overlays */}
-        <div 
-          className="absolute inset-0"
-          style={{ 
-            background: 'linear-gradient(to right, rgba(13,11,9,0.9) 0%, rgba(13,11,9,0.4) 50%, transparent 80%)'
-          }}
-        />
-        {/* Netflix-style bottom fade - tall, smooth gradient */}
-        <div 
-          className="absolute bottom-0 left-0 right-0 h-[70%]"
-          style={{ 
-            background: 'linear-gradient(to top, #0d0b09 0%, rgba(13,11,9,0.97) 15%, rgba(13,11,9,0.85) 35%, rgba(13,11,9,0.5) 55%, rgba(13,11,9,0.2) 75%, transparent 100%)'
-          }}
-        />
-        
-        {/* Content */}
-        <div className="absolute bottom-[18%] left-6 md:left-10 max-w-lg z-10">
-          {/* Status */}
-          {featuredAlbum?.hasRecap && (
-            <span className="inline-block px-2.5 py-1 rounded text-[10px] font-medium bg-green-500 text-white mb-3">
-              Film Ready
-            </span>
-          )}
-          
-          <h1 
-            className="text-3xl md:text-5xl font-light text-white mb-3"
-            style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
-          >
-            {featuredAlbum?.title ?? 'Living Memory'}
-          </h1>
-          
-          <p className="text-white/60 text-sm mb-5">
-            {featuredAlbum
-              ? `${featuredAlbum.photoCount} photos · ${featuredAlbum.storiesRecorded} stories${featuredAlbum.contributors.length ? ` from ${featuredAlbum.contributors.length} people` : ''}`
-              : 'Create your first memory in Capture'}
-          </p>
-          
-          <div className="flex items-center gap-3">
-            {featuredAlbum?.hasRecap && (
-              <button 
-                onClick={() => featuredAlbum && handleAlbumClick(featuredAlbum)}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium"
-                style={{ 
-                  background: 'linear-gradient(135deg, #e8dcc4 0%, #c9b896 100%)',
-                  color: '#1a1510'
-                }}
-              >
-                <PlayIcon className="w-4 h-4" />
-                Watch Film
-              </button>
+  const skip = (seconds: number) => {
+    if (videoRef.current) {
+      videoRef.current.currentTime = Math.max(0, Math.min(duration, videoRef.current.currentTime + seconds));
+    }
+  };
+
+  const toggleFullscreen = () => {
+    if (videoRef.current) {
+      if (document.fullscreenElement) {
+        document.exitFullscreen();
+      } else {
+        videoRef.current.requestFullscreen();
+      }
+    }
+  };
+
+  // ============================================================================
+  // CAROUSEL DRAG-TO-REORDER
+  // ============================================================================
+
+  const handleAlbumDragStart = (e: React.DragEvent, albumId: string) => {
+    setDraggedAlbumId(albumId);
+    e.dataTransfer.effectAllowed = 'move';
+    // Make the drag image semi-transparent
+    if (e.currentTarget instanceof HTMLElement) {
+      e.dataTransfer.setDragImage(e.currentTarget, 80, 100);
+    }
+  };
+
+  const handleAlbumDragOver = (e: React.DragEvent, albumId: string) => {
+    e.preventDefault();
+    if (draggedAlbumId && albumId !== draggedAlbumId) {
+      setDragOverAlbumId(albumId);
+    }
+  };
+
+  const handleAlbumDrop = (e: React.DragEvent, targetAlbumId: string) => {
+    e.preventDefault();
+    if (!draggedAlbumId || draggedAlbumId === targetAlbumId) {
+      setDraggedAlbumId(null);
+      setDragOverAlbumId(null);
+      return;
+    }
+
+    setAllAlbums(prev => {
+      const newAlbums = [...prev];
+      const sourceIdx = newAlbums.findIndex(a => a.id === draggedAlbumId);
+      const targetIdx = newAlbums.findIndex(a => a.id === targetAlbumId);
+      if (sourceIdx !== -1 && targetIdx !== -1) {
+        const [removed] = newAlbums.splice(sourceIdx, 1);
+        newAlbums.splice(targetIdx, 0, removed);
+      }
+
+      // Persist the new order to the database
+      const orderedIds = newAlbums.map(a => a.id);
+      fetch('/api/events/reorder', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderedIds }),
+      }).catch(() => { /* silently fail — order is still correct locally */ });
+
+      return newAlbums;
+    });
+
+    setDraggedAlbumId(null);
+    setDragOverAlbumId(null);
+  };
+
+  const handleAlbumDragEnd = () => {
+    setDraggedAlbumId(null);
+    setDragOverAlbumId(null);
+  };
+
+  // ============================================================================
+  // NETFLIX-STYLE HOVER PREVIEW
+  // ============================================================================
+  const handleThumbnailHover = useCallback((albumId: string) => {
+    // Small delay before playing — prevents flicker on fast mouse passes
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    hoverTimeoutRef.current = setTimeout(() => {
+      setHoveredAlbumId(albumId);
+      const video = hoverVideoRefs.current[albumId];
+      if (video) {
+        video.currentTime = 0;
+        video.play().catch(() => {});
+      }
+    }, 400);
+  }, []);
+
+  const handleThumbnailLeave = useCallback(() => {
+    if (hoverTimeoutRef.current) clearTimeout(hoverTimeoutRef.current);
+    if (hoveredAlbumId) {
+      const video = hoverVideoRefs.current[hoveredAlbumId];
+      if (video) {
+        video.pause();
+        video.currentTime = 0;
+      }
+    }
+    setHoveredAlbumId(null);
+  }, [hoveredAlbumId]);
+
+  // Hero (big screen) hover preview
+  const handleHeroEnter = useCallback(() => {
+    if (heroHoverTimeoutRef.current) clearTimeout(heroHoverTimeoutRef.current);
+    heroHoverTimeoutRef.current = setTimeout(() => {
+      setIsHeroHovered(true);
+      const video = heroPreviewRef.current;
+      if (video) {
+        video.currentTime = 0;
+        video.play().catch(() => {});
+      }
+    }, 600);
+  }, []);
+
+  const handleHeroLeave = useCallback(() => {
+    if (heroHoverTimeoutRef.current) clearTimeout(heroHoverTimeoutRef.current);
+    const video = heroPreviewRef.current;
+    if (video) {
+      video.pause();
+      video.currentTime = 0;
+    }
+    setIsHeroHovered(false);
+  }, []);
+
+  // Reset hero preview when featured album changes
+  useEffect(() => {
+    setIsHeroHovered(false);
+    if (heroPreviewRef.current) {
+      heroPreviewRef.current.pause();
+      heroPreviewRef.current.currentTime = 0;
+    }
+  }, [featuredAlbum?.id]);
+
+  // ============================================================================
+  // CINEMA VIEW - Enhanced with Video Player
+  // ============================================================================
+  const renderCinemaView = () => (
+    <div className="h-screen flex flex-col overflow-hidden">
+      {/* ================================================================== */}
+      {/* MAIN VIEWPORT - Featured Album / Video Player */}
+      {/* ================================================================== */}
+      <div className="flex-1 relative min-h-0">
+        {featuredAlbum && (
+          <>
+            {/* VIDEO PLAYER MODAL */}
+            {isPlayingVideo && featuredAlbum.videoUrl && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center">
+                {/* Backdrop */}
+                <div 
+                  className="absolute inset-0 bg-black/80 backdrop-blur-md"
+                  onClick={closeVideoPlayer}
+                />
+                
+                {/* Modal Container */}
+                <div 
+                  className="relative w-[95vw] h-[85vh] max-w-[1600px] rounded-2xl overflow-hidden shadow-2xl shadow-black/50 border border-white/10"
+                  style={{ background: isDark ? 'linear-gradient(145deg, #1a1a1c 0%, #0d0d0f 100%)' : 'linear-gradient(145deg, #2a2520 0%, #1d1a16 100%)' }}
+                  onMouseMove={handleMouseMove}
+                >
+                  {/* Video element */}
+                  <video
+                    ref={videoRef}
+                    src={featuredAlbum.videoUrl}
+                    className="w-full h-full object-contain bg-black cursor-pointer"
+                    playsInline
+                    onClick={togglePlayPause}
+                  />
+                  
+                  {/* Buffering indicator */}
+                  {isBuffering && (
+                    <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                      <div className="w-16 h-16 border-4 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" />
+                    </div>
+                  )}
+                  
+                  {/* Cinematic gradient overlays */}
+                  <div className={`absolute inset-0 pointer-events-none transition-opacity duration-500 ${showControls ? 'opacity-100' : 'opacity-0'}`}>
+                    <div className="absolute top-0 left-0 right-0 h-28 bg-gradient-to-b from-black/90 to-transparent" />
+                    <div className="absolute bottom-0 left-0 right-0 h-40 bg-gradient-to-t from-black/95 via-black/60 to-transparent" />
+                  </div>
+                  
+                  {/* Top bar - Title & Close */}
+                  <div className={`absolute top-0 left-0 right-0 p-5 flex items-center justify-between transition-all duration-500 ${showControls ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-4'}`}>
+                    <div className="flex items-center gap-4">
+                      <div className="flex items-center gap-2 px-4 py-2 rounded-full bg-cyan-500/20 backdrop-blur-sm border border-cyan-500/30">
+                        <PlayIcon />
+                        <span className="text-cyan-300 text-sm font-medium">Storybook</span>
+                      </div>
+                      <div>
+                        <h2 
+                          className="text-white text-xl font-light"
+                          style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+                        >
+                          {featuredAlbum.title}
+                        </h2>
+                        <p className="text-white/50 text-sm">{featuredAlbum.date} · {featuredAlbum.location}</p>
+                      </div>
+                    </div>
+                    <button
+                      onClick={closeVideoPlayer}
+                      className="w-11 h-11 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 flex items-center justify-center text-white hover:bg-white/20 hover:scale-105 transition-all"
+                    >
+                      <CloseIcon />
+                    </button>
+                  </div>
+                  
+                  {/* Center play/pause overlay */}
+                  <div 
+                    className={`absolute inset-0 flex items-center justify-center pointer-events-none transition-opacity duration-300 ${!isPlaying && showControls ? 'opacity-100' : 'opacity-0'}`}
+                  >
+                    <button
+                      onClick={togglePlayPause}
+                      className="w-24 h-24 rounded-full bg-white/10 backdrop-blur-md border border-white/20 flex items-center justify-center text-white pointer-events-auto hover:bg-white/20 hover:scale-110 transition-all shadow-2xl"
+                    >
+                      <svg className="w-12 h-12 ml-1" fill="currentColor" viewBox="0 0 24 24">
+                        <path d="M8 5v14l11-7z" />
+                      </svg>
+                    </button>
+                  </div>
+                  
+                  {/* Bottom controls */}
+                  <div className={`absolute bottom-0 left-0 right-0 p-5 transition-all duration-500 ${showControls ? 'opacity-100 translate-y-0' : 'opacity-0 translate-y-4'}`}>
+                    {/* Progress bar */}
+                    <div 
+                      className="relative h-1.5 bg-white/20 rounded-full mb-5 cursor-pointer group"
+                      onClick={seekTo}
+                    >
+                      {/* Progress */}
+                      <div 
+                        className="absolute inset-y-0 left-0 bg-gradient-to-r from-cyan-400 to-cyan-500 rounded-full transition-all"
+                        style={{ width: duration ? `${(currentTime / duration) * 100}%` : '0%' }}
+                      />
+                      {/* Scrubber */}
+                      <div 
+                        className="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg scale-0 group-hover:scale-100 transition-transform"
+                        style={{ left: duration ? `calc(${(currentTime / duration) * 100}% - 8px)` : '0' }}
+                      />
+                    </div>
+                    
+                    {/* Controls row */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {/* Skip back */}
+                        <button 
+                          onClick={() => skip(-10)}
+                          className="w-10 h-10 rounded-full flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-all"
+                        >
+                          <RewindIcon />
+                        </button>
+                        
+                        {/* Play/Pause */}
+                        <button 
+                          onClick={togglePlayPause}
+                          className="w-14 h-14 rounded-full bg-white flex items-center justify-center text-black hover:scale-105 transition-transform shadow-lg"
+                        >
+                          {isPlaying ? <PauseIcon /> : <PlayLargeIcon />}
+                        </button>
+                        
+                        {/* Skip forward */}
+                        <button 
+                          onClick={() => skip(10)}
+                          className="w-10 h-10 rounded-full flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-all"
+                        >
+                          <ForwardIcon />
+                        </button>
+                        
+                        {/* Time */}
+                        <div className="ml-4 text-white/70 text-sm font-mono">
+                          <span className="text-white">{formatTime(currentTime)}</span>
+                          <span className="mx-2">/</span>
+                          <span>{formatTime(duration)}</span>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center gap-2">
+                        {/* Volume */}
+                        <button 
+                          onClick={toggleMute}
+                          className="w-10 h-10 rounded-full flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-all"
+                        >
+                          {isMuted ? <VolumeMuteIcon /> : <VolumeIcon />}
+                        </button>
+                        
+                        {/* Fullscreen */}
+                        <button 
+                          onClick={toggleFullscreen}
+                          className="w-10 h-10 rounded-full flex items-center justify-center text-white/70 hover:text-white hover:bg-white/10 transition-all"
+                        >
+                          <FullscreenIcon />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  
+                  {/* Decorative corner accents */}
+                  <div className="absolute top-0 left-0 w-20 h-20 border-l-2 border-t-2 border-cyan-500/30 rounded-tl-2xl pointer-events-none" />
+                  <div className="absolute top-0 right-0 w-20 h-20 border-r-2 border-t-2 border-cyan-500/30 rounded-tr-2xl pointer-events-none" />
+                  <div className="absolute bottom-0 left-0 w-20 h-20 border-l-2 border-b-2 border-cyan-500/30 rounded-bl-2xl pointer-events-none" />
+                  <div className="absolute bottom-0 right-0 w-20 h-20 border-r-2 border-b-2 border-cyan-500/30 rounded-br-2xl pointer-events-none" />
+                </div>
+              </div>
             )}
-            {featuredAlbum && (
-              <button 
-                onClick={() => handleAlbumClick(featuredAlbum)}
-                className="flex items-center gap-2 px-5 py-2.5 rounded-full text-sm font-medium text-white"
-                style={{ 
-                  background: 'rgba(255,255,255,0.1)',
-                  border: '1px solid rgba(255,255,255,0.2)'
-                }}
-              >
-                <MicIcon />
-                Add Your Story
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
 
-      {/* Swimlane Rows - seamless continuation of hero fade, subtle warmth below */}
-      <div 
-        className="relative z-10 pt-4 -mt-24 pb-16"
-        style={{ background: 'linear-gradient(to bottom, #0d0b09 0%, #0d0b09 25%, #141210 60%, #1f1b18 100%)' }}
-      >
-        {categories.map((category) => (
-          <SwimlaneRow
-            key={category.title}
-            title={category.title}
-            albums={category.albums}
-            onAlbumClick={handleAlbumClick}
-          />
-        ))}
-      </div>
-
-      {/* Memory Timeline - Floating Panel */}
-      <div className="fixed left-6 bottom-6 z-50">
-        <button
-          onClick={() => setShowTimeline(!showTimeline)}
-          className={`flex items-center gap-3 px-5 py-3 rounded-xl text-base font-medium transition-all shadow-lg ${
-            showTimeline 
-              ? 'bg-cyan-500/25 text-cyan-300 border-2 border-cyan-500/50' 
-              : 'bg-[#1a1612] text-white border-2 border-white/20 hover:border-white/30 hover:bg-[#221d18]'
-          }`}
-        >
-          <span className="text-xl">📜</span>
-          Memory Timeline
-          {!showTimeline && (
-            <span className="flex items-center justify-center min-w-[26px] h-6 px-1.5 rounded-full bg-cyan-500 text-white text-sm font-bold">
-              {MOCK_TIMELINE_EVENTS.length}
-            </span>
-          )}
-        </button>
-      </div>
-
-      {/* Timeline Panel */}
-      {showTimeline && (
-        <div 
-          className="fixed left-6 bottom-24 w-[400px] max-h-[65vh] z-50 rounded-2xl overflow-hidden border-2 border-white/20 shadow-2xl animate-in slide-in-from-bottom-4 fade-in duration-200"
-          style={{ background: 'linear-gradient(to bottom, #1f1b18 0%, #141210 100%)', boxShadow: '0 25px 50px -12px rgba(0,0,0,0.6)' }}
-        >
-          {/* Header */}
-          <div className="flex items-center justify-between px-5 py-4 border-b border-white/15 sticky top-0 bg-[#1f1b18]/98 backdrop-blur-md">
-            <div className="flex items-center gap-3">
-              <span className="text-2xl">📜</span>
-              <h3 className="text-white font-semibold text-lg">Memory Timeline</h3>
-            </div>
-            <button 
-              onClick={() => setShowTimeline(false)}
-              className="p-2 text-white/60 hover:text-white hover:bg-white/10 rounded-lg transition-all"
-            >
-              <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-              </svg>
-            </button>
-          </div>
-
-          {/* Timeline Events */}
-          <div className="overflow-y-auto max-h-[calc(65vh-72px)] p-4 space-y-3">
-            {MOCK_TIMELINE_EVENTS.map((event, index) => (
+            {/* ALBUM PREVIEW MODE — Apple Photos Memories style */}
+            <>
+              {/* Full-bleed photo — the photo IS the experience */}
               <div 
-                key={event.id} 
-                className="relative flex gap-4 p-4 rounded-xl bg-white/[0.08] hover:bg-white/[0.12] border border-white/10 transition-colors cursor-pointer group"
+                className={`absolute inset-0 transition-opacity duration-500 ${isTransitioning ? 'opacity-0' : 'opacity-100'}`}
+                onMouseEnter={featuredAlbum.videoUrl ? handleHeroEnter : undefined}
+                onMouseLeave={featuredAlbum.videoUrl ? handleHeroLeave : undefined}
               >
-                {/* Timeline connector */}
-                {index < MOCK_TIMELINE_EVENTS.length - 1 && (
-                  <div className="absolute left-[34px] top-[60px] w-0.5 h-[calc(100%-32px)] bg-white/15" />
+                <img 
+                  src={featuredAlbum.coverUrl || '/testphoto.jpg'}
+                  alt=""
+                  className={`w-full h-full object-cover transition-opacity duration-700 ${isHeroHovered ? 'opacity-0' : 'opacity-100'}`}
+                  style={{ filter: 'brightness(1.0) saturate(1.05)' }}
+                />
+                
+                {/* Netflix-style hero video preview */}
+                {featuredAlbum.videoUrl && (
+                  <video
+                    ref={heroPreviewRef}
+                    src={featuredAlbum.videoUrl}
+                    className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-700 ${isHeroHovered ? 'opacity-100' : 'opacity-0'}`}
+                    muted
+                    playsInline
+                    preload="none"
+                  />
                 )}
                 
-                {/* Icon */}
-                <div className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 z-10 ${
-                  event.type === 'film' ? 'bg-green-500/30' :
-                  event.type === 'question' ? 'bg-amber-500/30' :
-                  event.type === 'perspective' ? 'bg-purple-500/30' :
-                  event.type === 'story' ? 'bg-cyan-500/30' :
-                  event.type === 'member' ? 'bg-pink-500/30' :
-                  'bg-white/15'
-                }`}>
-                  <span className="text-base">{TIMELINE_ICONS[event.type]}</span>
+                {/* Single subtle bottom gradient — only covers bottom ~35% for text readability */}
+                <div 
+                  className="absolute inset-x-0 bottom-0 pointer-events-none"
+                  style={{ 
+                    height: '45%',
+                    background: 'linear-gradient(to top, rgba(0,0,0,0.45) 0%, rgba(0,0,0,0.2) 40%, transparent 100%)',
+                  }}
+                />
+              </div>
+
+              {/* Top navigator — frosted glass pill, identical in both themes */}
+              <div className="absolute top-6 left-1/2 -translate-x-1/2 z-20 flex items-center gap-3">
+                <button 
+                  onClick={() => navigateAlbum('prev')}
+                  className="w-9 h-9 rounded-full bg-white/15 backdrop-blur-xl border border-white/20 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/25 transition-all"
+                >
+                  <ChevronLeft />
+                </button>
+                <div className="px-4 py-1.5 rounded-full backdrop-blur-xl bg-white/15 border border-white/20">
+                  <span className="text-white/80 text-sm font-medium">
+                    <span className="text-white font-semibold">{currentIndex + 1}</span>
+                    <span className="mx-1.5 text-white/40">/</span>
+                    <span>{filmsOnly.length}</span>
+                  </span>
                 </div>
+                <button 
+                  onClick={() => navigateAlbum('next')}
+                  className="w-9 h-9 rounded-full bg-white/15 backdrop-blur-xl border border-white/20 flex items-center justify-center text-white/70 hover:text-white hover:bg-white/25 transition-all"
+                >
+                  <ChevronRight />
+                </button>
+              </div>
+
+              {/* Floating bottom-left content — minimal, on top of photo */}
+              <div 
+                className={`absolute bottom-8 left-8 md:left-12 lg:left-16 z-20 max-w-2xl transition-all duration-500 ${isTransitioning ? 'opacity-0 translate-y-4' : 'opacity-100 translate-y-0'}`}
+                style={{ textShadow: '0 1px 4px rgba(0,0,0,0.5), 0 4px 16px rgba(0,0,0,0.25)' }}
+              >
+                {/* Title */}
+                <h1 
+                  className="text-4xl md:text-5xl lg:text-6xl text-white font-light leading-[1.1] tracking-tight mb-2"
+                  style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+                >
+                  {featuredAlbum.title}
+                </h1>
                 
-                {/* Content */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-start justify-between gap-2">
-                    <p className="text-white text-base font-medium leading-tight">{event.title}</p>
-                    {event.member && (
-                      <div 
-                        className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-                        style={{ backgroundColor: event.member.color }}
-                        title={event.member.name}
-                      >
-                        {event.member.name[0]}
-                      </div>
+                {/* Date, location & stats — single line */}
+                <div className="flex items-center gap-3 text-white/70 text-base mb-5">
+                  <span className="text-white/90">{featuredAlbum.date}</span>
+                  <span className="w-1 h-1 rounded-full bg-white/40" />
+                  <span>{featuredAlbum.location}</span>
+                  <span className="w-1 h-1 rounded-full bg-white/40" />
+                  <span>{featuredAlbum.photoCount} photos</span>
+                  <span className="w-1 h-1 rounded-full bg-white/40" />
+                  <span>{featuredAlbum.storiesRecorded} stories</span>
+                </div>
+
+                {/* Quote — simple inline, no border-left testimony style */}
+                {featuredAlbum.featuredQuote && (
+                  <p 
+                    className="text-white/60 text-base italic mb-5 max-w-lg"
+                    style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+                  >
+                    &ldquo;{featuredAlbum.featuredQuote}&rdquo;
+                    {featuredAlbum.featuredQuoteAuthor && (
+                      <span className="text-white/40 not-italic"> — {featuredAlbum.featuredQuoteAuthor}</span>
                     )}
-                  </div>
-                  <p className="text-white/60 text-sm mt-1 line-clamp-2">{event.description}</p>
-                  <div className="flex items-center gap-2 mt-2">
-                    {event.albumTitle && (
-                      <span className="text-white/50 text-xs truncate max-w-[160px]">{event.albumTitle}</span>
-                    )}
-                    <span className="text-white/30 text-xs">·</span>
-                    <span className="text-white/50 text-xs">{event.timeAgo}</span>
-                  </div>
+                  </p>
+                )}
+
+                {/* Hero Play + View Album */}
+                <div className="flex items-center gap-4" style={{ textShadow: 'none' }}>
+                  <Link
+                    href={`/album/${featuredAlbum.id}/storybook?mode=watch`}
+                    className="flex items-center gap-3 px-8 py-4 rounded-2xl text-white transition-all hover:scale-[1.02] active:scale-[0.98] shadow-xl shadow-cyan-500/20"
+                    style={{ background: 'linear-gradient(135deg, #06b6d4, #0d9488)' }}
+                  >
+                    <PlayIcon />
+                    <span className="text-lg font-semibold tracking-wide">Play Living Storybook</span>
+                  </Link>
+
+                  <Link
+                    href={`/album/${featuredAlbum.id}`}
+                    className="text-white/60 hover:text-white text-sm font-medium transition-colors"
+                  >
+                    View Album
+                  </Link>
+
+                  <Link
+                    href={`/album/${featuredAlbum.id}/editor`}
+                    className="flex items-center gap-1.5 text-white/60 hover:text-white text-sm font-medium transition-colors"
+                  >
+                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M9.53 16.122a3 3 0 00-5.78 1.128 2.25 2.25 0 01-2.4 2.245 4.5 4.5 0 008.4-2.245c0-.399-.078-.78-.22-1.128zm0 0a15.998 15.998 0 003.388-1.62m-5.043-.025a15.994 15.994 0 011.622-3.395m3.42 3.42a15.995 15.995 0 004.764-4.648l3.876-5.814a1.151 1.151 0 00-1.597-1.597L14.146 6.32a15.996 15.996 0 00-4.649 4.764m3.42 3.42a6.776 6.776 0 00-3.42-3.42" /></svg>
+                    Editor
+                  </Link>
+
+                  {/* Contributors — small avatars */}
+                  {featuredAlbum.members && featuredAlbum.members.length > 0 && (
+                    <div className="flex -space-x-2 ml-2">
+                      {featuredAlbum.members.slice(0, 4).map((m) => (
+                        <div 
+                          key={m.id} 
+                          className="w-9 h-9 rounded-full border-2 border-white/30 flex items-center justify-center text-white text-xs font-semibold shadow-md"
+                          style={{ backgroundColor: m.avatar_color }} 
+                          title={m.name}
+                        >
+                          {m.name[0]}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               </div>
+            </>
+          </>
+        )}
+        
+        {loading && (
+          <div className={`absolute inset-0 flex items-center justify-center ${isDark ? 'bg-[#0a0a0b]' : 'bg-[var(--bg-primary)]'}`}>
+            <div className="flex flex-col items-center gap-4">
+              <div className="w-12 h-12 border-2 border-cyan-400/30 border-t-cyan-400 rounded-full animate-spin" />
+              <div className={isDark ? 'text-white/50' : 'text-gray-500'}>Loading your memories...</div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* ================================================================== */}
+      {/* CAROUSEL - Film Strip Style */}
+      {/* ================================================================== */}
+      <div className={`relative py-6 ${isDark ? 'bg-[#0a0a0b]' : 'bg-[#d5cdbf]'}`} style={!isDark ? { borderTop: '1px solid rgba(0,0,0,0.08)' } : undefined}>
+          {/* Film strip perforations decoration */}
+          <div className="absolute top-0 left-0 right-0 h-3 flex justify-between px-4 opacity-20">
+            {Array.from({ length: 30 }).map((_, i) => (
+              <div key={i} className={`w-2 h-2 rounded-full ${isDark ? 'bg-white/50' : 'bg-[#c4baa8]'}`} />
+            ))}
+          </div>
+          <div className="absolute bottom-0 left-0 right-0 h-3 flex justify-between px-4 opacity-20">
+            {Array.from({ length: 30 }).map((_, i) => (
+              <div key={i} className={`w-2 h-2 rounded-full ${isDark ? 'bg-white/50' : 'bg-[#c4baa8]'}`} />
             ))}
           </div>
           
-          {/* Footer */}
-          <div className="px-5 py-4 border-t border-white/15 bg-[#141210]/98 backdrop-blur-md">
-            <button className="w-full text-center text-cyan-400 text-sm font-medium hover:text-cyan-300 transition-colors py-2">
-              View Full History →
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* Album Detail Modal */}
-      <AlbumModal 
-        album={selectedAlbum}
-        allAlbums={[...mockAlbums, ...albums]}
-        onClose={() => setSelectedAlbum(null)}
-        onAlbumClick={handleAlbumClick}
-      />
-      
-      {/* EVA Orb - Companion */}
-      <div className="fixed bottom-6 right-6 z-50">
-        <EVAOrb onClick={() => setShowEvaModal(true)} size={120} />
-      </div>
-      
-      {/* EVA Companion Modal - with Live API */}
-      <EVACompanionModal 
-        isOpen={showEvaModal} 
-        onClose={() => setShowEvaModal(false)} 
-      />
-      
-
-      {/* ================================================================== */}
-      {/* TUTORIAL OVERLAY */}
-      {/* ================================================================== */}
-      {showTutorial && (
-        <>
-          {/* Semi-transparent backdrop */}
-          <div className="fixed inset-0 z-[200] bg-black/60" />
+          {/* Navigation arrows */}
+          <button
+            onClick={() => scrollCarousel('left')}
+            className={`absolute left-2 top-1/2 -translate-y-1/2 z-20 w-12 h-12 rounded-full backdrop-blur-sm border flex items-center justify-center hover:border-cyan-400/50 transition-all shadow-lg ${isDark ? 'bg-black/70 border-white/20 text-white/70 hover:text-white hover:bg-black/90' : 'bg-white/90 border-[#c4baa8] text-[#8a7e6e] hover:text-gray-800 hover:bg-white'}`}
+          >
+            <ChevronLeft />
+          </button>
+          <button
+            onClick={() => scrollCarousel('right')}
+            className={`absolute right-2 top-1/2 -translate-y-1/2 z-20 w-12 h-12 rounded-full backdrop-blur-sm border flex items-center justify-center hover:border-cyan-400/50 transition-all shadow-lg ${isDark ? 'bg-black/70 border-white/20 text-white/70 hover:text-white hover:bg-black/90' : 'bg-white/90 border-[#c4baa8] text-[#8a7e6e] hover:text-gray-800 hover:bg-white'}`}
+          >
+            <ChevronRight />
+          </button>
           
-          {/* Positioned tutorial card */}
+          {/* Carousel */}
           <div 
-            className={`fixed z-[220] w-[420px] max-w-[calc(100vw-2rem)] rounded-2xl overflow-hidden bg-gradient-to-b from-[#0a0a0f] to-[#0f0a15] border border-cyan-500/30 shadow-2xl flex flex-col transition-all duration-300 ${
-              ALBUM_LIST_TUTORIAL_STEPS[tutorialStep]?.position === 'center' 
-                ? 'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2' :
-              ALBUM_LIST_TUTORIAL_STEPS[tutorialStep]?.position === 'left' 
-                ? 'top-1/2 left-8 -translate-y-1/2' :
-              ALBUM_LIST_TUTORIAL_STEPS[tutorialStep]?.position === 'right' 
-                ? 'top-1/2 right-8 -translate-y-1/2' :
-              ALBUM_LIST_TUTORIAL_STEPS[tutorialStep]?.position === 'bottom-right' 
-                ? 'bottom-32 right-32' :
-              'top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2'
+            ref={carouselRef}
+            className="flex gap-4 overflow-x-auto px-16 py-2 scrollbar-hide scroll-smooth"
+          >
+          {filmsOnly.map((album) => {
+            const isSelected = featuredAlbum?.id === album.id;
+            const isBeingDragged = draggedAlbumId === album.id;
+            const isDragTarget = dragOverAlbumId === album.id;
+            const isHoveredPreview = hoveredAlbumId === album.id;
+            return (
+              <div
+                key={album.id}
+                draggable
+                onDragStart={(e) => handleAlbumDragStart(e, album.id)}
+                onDragOver={(e) => handleAlbumDragOver(e, album.id)}
+                onDrop={(e) => handleAlbumDrop(e, album.id)}
+                onDragEnd={handleAlbumDragEnd}
+                onMouseEnter={() => album.videoUrl ? handleThumbnailHover(album.id) : undefined}
+                onMouseLeave={handleThumbnailLeave}
+                className={`flex-shrink-0 w-[160px] h-[200px] rounded-xl overflow-hidden relative group transition-all duration-300 cursor-grab active:cursor-grabbing ${
+                  isSelected 
+                    ? `ring-2 ring-cyan-400 ring-offset-4 scale-110 z-10 ${isDark ? 'ring-offset-[#0a0a0b]' : 'ring-offset-[#d5cdbf]'}` 
+                    : 'hover:scale-105 opacity-70 hover:opacity-100'
+                } ${isBeingDragged ? 'opacity-40 scale-95' : ''} ${isDragTarget ? 'ring-2 ring-cyan-400/60 scale-105' : ''}`}
+                onClick={() => handleAlbumSelect(album)}
+              >
+                <img 
+                  src={album.coverUrl || '/testphoto.jpg'}
+                  alt={album.title}
+                  className={`w-full h-full object-cover group-hover:scale-110 transition-all duration-500 ${isHoveredPreview ? 'opacity-0' : 'opacity-100'}`}
+                  draggable={false}
+                />
+                
+                {/* Netflix-style hover video preview */}
+                {album.videoUrl && (
+                  <video
+                    ref={(el) => { hoverVideoRefs.current[album.id] = el; }}
+                    src={album.videoUrl}
+                    className={`absolute inset-0 w-full h-full object-cover transition-opacity duration-500 ${isHoveredPreview ? 'opacity-100' : 'opacity-0'}`}
+                    muted
+                    playsInline
+                    loop
+                    preload="none"
+                  />
+                )}
+                
+                <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/30 to-transparent" />
+                
+                {/* Drop indicator line */}
+                {isDragTarget && (
+                  <div className="absolute left-0 top-2 bottom-2 w-1 bg-cyan-400 rounded-full shadow-lg shadow-cyan-400/50 z-20" />
+                )}
+                
+                {/* Film indicator */}
+                <div className={`absolute top-2 right-2 w-7 h-7 rounded-full bg-cyan-500 flex items-center justify-center shadow-lg shadow-cyan-500/50 transition-opacity duration-300 ${isHoveredPreview ? 'opacity-0' : 'opacity-100'}`}>
+                  <PlayIcon />
+                </div>
+                
+                
+                {/* Title overlay */}
+                <div className="absolute bottom-0 left-0 right-0 p-3">
+                  <h4 
+                    className={`text-sm font-medium truncate transition-colors ${isSelected ? 'text-cyan-300' : 'text-white'}`}
+                    style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+                  >
+                    {album.title}
+                  </h4>
+                  <p className="text-white/50 text-xs mt-0.5">{album.date}</p>
+                </div>
+                
+                {/* Glow effect for selected */}
+                {isSelected && (
+                  <div className="absolute -inset-2 rounded-2xl bg-cyan-400/20 blur-xl -z-10" />
+                )}
+              </div>
+            );
+          })}
+          </div>
+          
+        {/* Fade edges */}
+        <div className={`absolute left-0 top-3 bottom-3 w-20 bg-gradient-to-r to-transparent pointer-events-none z-10 ${isDark ? 'from-[#0a0a0b] via-[#0a0a0b]/80' : 'from-[#d5cdbf] via-[#d5cdbf]/80'}`} />
+        <div className={`absolute right-0 top-3 bottom-3 w-20 bg-gradient-to-l to-transparent pointer-events-none z-10 ${isDark ? 'from-[#0a0a0b] via-[#0a0a0b]/80' : 'from-[#d5cdbf] via-[#d5cdbf]/80'}`} />
+        
+        {/* Link to all albums */}
+        <div className="absolute right-20 top-1/2 -translate-y-1/2 z-20">
+          <button
+            onClick={() => setViewMode('grid')}
+            className={`flex items-center gap-2 px-4 py-2 rounded-full transition-all text-sm ${isDark ? 'bg-white/10 border border-white/15 text-white/60 hover:text-white hover:bg-white/15 hover:border-white/25' : 'bg-white/80 border border-[#c4baa8] text-[#6b5e4e] hover:text-gray-900 hover:bg-white hover:border-[#a89a86]'}`}
+          >
+            <GridIcon />
+            <span>All Albums</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ============================================================================
+  // GRID VIEW - Full Size Rectangular Cards
+  // ============================================================================
+  const renderGridView = () => (
+    <div className="min-h-screen p-6 md:p-10 pt-20">
+      <div className="max-w-[1800px] mx-auto">
+        {/* Header */}
+        <div className="text-center mb-12">
+          <p className={`text-sm tracking-[0.3em] uppercase mb-3 ${isDark ? 'text-cyan-400/60' : 'text-cyan-700/60'}`}>Your Collection</p>
+          <h1 
+            className={`text-4xl md:text-5xl font-light mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}
+            style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+          >
+            All Albums
+          </h1>
+          <p className={isDark ? 'text-white/40' : 'text-gray-400'}>{allAlbums.length} memory collections · {allAlbums.reduce((acc, a) => acc + a.storiesRecorded, 0)} stories</p>
+        </div>
+        
+        {/* Grid - 2 columns, full rectangular cards */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
+          {/* Add new */}
+          <button
+            onClick={() => openCreateAlbum()}
+            className={`h-[400px] md:h-[500px] rounded-3xl border-2 border-dashed flex flex-col items-center justify-center gap-5 hover:text-cyan-500 hover:border-cyan-400/40 hover:bg-cyan-400/5 transition-all group ${
+              isDark ? 'border-white/15 text-white/30' : 'border-[#b0a690] text-[#8a7e6e]'
             }`}
           >
-            {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-              <div className="flex items-center gap-2">
-                <div className={`w-2 h-2 rounded-full ${isLiveConnected ? 'bg-green-500' : isLiveConnecting ? 'bg-yellow-500 animate-pulse' : 'bg-white/30'}`} />
-                <span className="text-white/70 text-xs">
-                  {isLiveConnecting ? 'Connecting...' : 'EVA'}
-                </span>
-                <span className="text-white/30 text-xs ml-2">
-                  {tutorialStep + 1}/{ALBUM_LIST_TUTORIAL_STEPS.length}
-                </span>
-              </div>
-              <button
-                onClick={skipTutorial}
-                className="p-1.5 text-white/50 hover:text-white hover:bg-white/10 rounded-lg transition-all"
-                title="Skip tutorial"
-              >
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                </svg>
-              </button>
+            <div className="w-20 h-20 rounded-full border-2 border-current flex items-center justify-center group-hover:scale-110 group-hover:rotate-90 transition-all duration-500">
+              <svg className="w-8 h-8" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+              </svg>
             </div>
-            
-            {/* Main content */}
-            <div className="flex flex-col items-center py-6 px-5">
-              {/* EVA Orb - smaller for positioned card */}
-              <div className="mb-4">
-                <EVAOrb size={80} isSpeaking={isTutorialSpeaking} />
+            <div className="text-center">
+              <span className="text-xl font-light block" style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}>Create New Album</span>
+              <span className="text-sm opacity-60 mt-1 block">Start preserving memories</span>
+            </div>
+          </button>
+          
+          {allAlbums.map((album) => {
+            const isBeingDragged = draggedAlbumId === album.id;
+            const isDragTarget = dragOverAlbumId === album.id;
+            return (
+            <div
+              key={album.id}
+              draggable
+              onDragStart={(e) => handleAlbumDragStart(e, album.id)}
+              onDragOver={(e) => handleAlbumDragOver(e, album.id)}
+              onDrop={(e) => handleAlbumDrop(e, album.id)}
+              onDragEnd={handleAlbumDragEnd}
+              onClick={() => handleAlbumSelect(album)}
+              className={`h-[400px] md:h-[500px] rounded-3xl overflow-hidden relative group text-left cursor-grab active:cursor-grabbing transition-all duration-200 ${
+                isBeingDragged ? 'opacity-40 scale-[0.97]' : ''
+              } ${isDragTarget ? 'ring-2 ring-cyan-400/60 ring-offset-4 ring-offset-black/20 scale-[1.02]' : ''}`}
+            >
+              {/* Drop indicator */}
+              {isDragTarget && (
+                <div className="absolute left-0 top-4 bottom-4 w-1.5 bg-cyan-400 rounded-full shadow-lg shadow-cyan-400/50 z-20" />
+              )}
+              
+              {/* Full cover image */}
+              <img 
+                src={album.coverUrl || '/testphoto.jpg'}
+                alt={album.title}
+                className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+                draggable={false}
+              />
+              
+              {/* Gradient overlays */}
+              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent opacity-80 group-hover:opacity-90 transition-opacity" />
+              <div className="absolute inset-0 bg-gradient-to-r from-black/50 to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+              
+              
+              {/* Stats badges */}
+              <div className="absolute top-6 right-6 flex items-center gap-2">
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-sm text-white/70 text-sm">
+                  <PhotoIcon />
+                  <span>{album.photoCount}</span>
+                </div>
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/40 backdrop-blur-sm text-white/70 text-sm">
+                  <MicIcon />
+                  <span>{album.storiesRecorded}</span>
+                </div>
               </div>
               
-              {/* Tutorial text */}
-              <div className="text-center mb-5 min-h-[60px]">
-                <p 
-                  className="text-white text-base leading-relaxed"
+              {/* Content */}
+              <div className="absolute bottom-0 left-0 right-0 p-8">
+                {/* Quote preview on hover */}
+                {album.featuredQuote && (
+                  <p 
+                    className="text-white/70 text-lg italic mb-4 line-clamp-2 opacity-0 group-hover:opacity-100 translate-y-4 group-hover:translate-y-0 transition-all duration-300"
+                    style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+                  >
+                    &ldquo;{album.featuredQuote}&rdquo;
+                  </p>
+                )}
+                
+                <h3 
+                  className="text-white text-3xl md:text-4xl font-light mb-3 group-hover:text-cyan-300 transition-colors"
                   style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
                 >
-                  {tutorialText}
-                  {(isTutorialSpeaking || tutorialText) && <span className="animate-pulse ml-1">|</span>}
-                </p>
+                  {album.title}
+                </h3>
+                
+                <div className="flex items-center gap-3 text-white/50">
+                  <span className="text-white/70">{album.date}</span>
+                  <span className="w-1 h-1 rounded-full bg-white/30" />
+                  <span>{album.location}</span>
+                </div>
+                
+                {/* Contributors */}
+                {album.members && album.members.length > 0 && (
+                  <div className="flex items-center gap-3 mt-4 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div className="flex -space-x-2">
+                      {album.members.slice(0, 3).map((m) => (
+                        <div
+                          key={m.id}
+                          className="w-8 h-8 rounded-full border-2 border-black/50 flex items-center justify-center text-white text-xs font-medium"
+                          style={{ backgroundColor: m.avatar_color }}
+                        >
+                          {m.name[0]}
+                        </div>
+                      ))}
+                    </div>
+                    <span className="text-white/50 text-sm">{album.members.length} contributors</span>
+                  </div>
+                )}
               </div>
               
-              {/* Action buttons */}
-              <div className="flex gap-3 w-full">
-                <button
-                  onClick={advanceTutorial}
-                  className="flex-1 px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-cyan-500 text-white rounded-full text-sm font-medium hover:from-cyan-500 hover:to-cyan-400 transition-all"
-                >
-                  {ALBUM_LIST_TUTORIAL_STEPS[tutorialStep]?.final ? 'Finish' : 'Continue'}
-                </button>
-                <button
-                  onClick={skipTutorial}
-                  className="px-4 py-2.5 bg-white/10 text-white/70 rounded-full text-sm font-medium hover:bg-white/20 hover:text-white transition-all"
-                >
-                  Skip
-                </button>
-              </div>
-              
-              {/* Step dots */}
-              <div className="flex justify-center gap-1.5 mt-4">
-                {ALBUM_LIST_TUTORIAL_STEPS.map((_, i) => (
-                  <div 
-                    key={i}
-                    className={`w-1.5 h-1.5 rounded-full transition-colors ${i === tutorialStep ? 'bg-cyan-400' : i < tutorialStep ? 'bg-cyan-400/50' : 'bg-white/20'}`}
-                  />
-                ))}
-              </div>
+              {/* Hover border glow */}
+              <div className="absolute inset-0 rounded-3xl border-2 border-cyan-400/0 group-hover:border-cyan-400/40 transition-colors pointer-events-none" />
+              <div className="absolute inset-0 rounded-3xl opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" style={{ boxShadow: 'inset 0 0 60px rgba(6,182,212,0.1)' }} />
+            </div>
+            );
+          })}
+        </div>
+      </div>
+    </div>
+  );
+
+  // ============================================================================
+  // TIMELINE VIEW - Enhanced
+  // ============================================================================
+  const renderTimelineView = () => {
+    const albumsByYear = allAlbums.reduce((acc, album) => {
+      const year = album.date.split(' ').pop() || 'Unknown';
+      if (!acc[year]) acc[year] = [];
+      acc[year].push(album);
+      return acc;
+    }, {} as Record<string, Album[]>);
+    
+    const years = Object.keys(albumsByYear).sort((a, b) => parseInt(b) - parseInt(a));
+    
+    return (
+      <div className="min-h-screen p-6 md:p-10 pt-20">
+        <div className="max-w-6xl mx-auto">
+          {/* Header */}
+          <div className="text-center mb-20">
+            <p className={`text-sm tracking-[0.3em] uppercase mb-3 ${isDark ? 'text-cyan-400/60' : 'text-cyan-700/60'}`}>Through The Years</p>
+            <h1 
+              className={`text-4xl md:text-5xl font-light mb-4 ${isDark ? 'text-white' : 'text-gray-900'}`}
+              style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+            >
+              Memory Timeline
+            </h1>
+            <p className={isDark ? 'text-white/40' : 'text-gray-400'}>Your family journey across {years.length} years</p>
+          </div>
+          
+          {/* Timeline */}
+          <div className="relative">
+            {/* Central line with gradient */}
+            <div className="absolute left-6 md:left-1/2 top-0 bottom-0 w-0.5">
+              <div className="absolute inset-0 bg-gradient-to-b from-cyan-500 via-cyan-500/40 to-transparent" />
             </div>
             
-            {/* Aurora Wave at bottom - smaller */}
-            <div className="h-12 relative">
-              <AuroraWave 
-                isActive={showTutorial}
-                isAISpeaking={isTutorialSpeaking} 
-                userAudioLevel={0} 
-              />
+            {years.map((year, yearIndex) => (
+              <div key={year} className="mb-20 relative">
+                {/* Year marker */}
+                <div className="relative mb-10">
+                  <div className={`absolute left-6 md:left-1/2 w-5 h-5 -ml-2.5 rounded-full border-4 border-cyan-500 shadow-lg shadow-cyan-500/50 z-10 ${isDark ? 'bg-[#000000]' : 'bg-[#f5f5f7]'}`} />
+                  <div className="ml-16 md:ml-0 md:text-center">
+                    <span 
+                      className={`text-4xl md:text-5xl font-light inline-block ${isDark ? 'text-white' : 'text-gray-900'}`}
+                      style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+                    >
+                      {year}
+                    </span>
+                    <p className={`text-sm mt-1 ${isDark ? 'text-white/30' : 'text-gray-400'}`}>{albumsByYear[year].length} memories</p>
+                  </div>
+                </div>
+                
+                {/* Albums for this year */}
+                <div className="space-y-8 ml-16 md:ml-0">
+                  {albumsByYear[year].map((album, index) => (
+                    <div 
+                      key={album.id}
+                      className={`flex items-stretch gap-8 ${index % 2 === 0 ? 'md:flex-row-reverse' : ''}`}
+                    >
+                      <div className="hidden md:block md:w-1/2" />
+                      <button
+                        onClick={() => handleAlbumSelect(album)}
+                        className={`flex-1 md:w-1/2 flex gap-5 p-5 rounded-2xl border transition-all group overflow-hidden relative ${isDark ? 'bg-white/[0.03] border-white/10 hover:bg-white/[0.06] hover:border-cyan-500/30' : 'bg-white border-gray-200 hover:bg-gray-50 hover:border-cyan-500/40 shadow-sm hover:shadow-md'}`}
+                      >
+                        {/* Glow on hover */}
+                        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity" style={{ background: 'radial-gradient(circle at 30% 50%, rgba(6,182,212,0.1) 0%, transparent 50%)' }} />
+                        
+                        <div className="w-28 h-36 rounded-xl overflow-hidden flex-shrink-0 relative">
+                          <img 
+                            src={album.coverUrl || '/testphoto.jpg'}
+                            alt={album.title}
+                            className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
+                          />
+                          {album.hasRecap && (
+                            <div className="absolute inset-0 flex items-center justify-center bg-black/30 opacity-0 group-hover:opacity-100 transition-opacity">
+                              <div className="w-10 h-10 rounded-full bg-cyan-500/80 flex items-center justify-center">
+                                <PlayIcon />
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                        <div className="flex-1 text-left py-1 relative">
+                          <h3 
+                            className={`text-xl font-light group-hover:text-cyan-500 transition-colors mb-2 ${isDark ? 'text-white' : 'text-gray-900'}`}
+                            style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+                          >
+                            {album.title}
+                          </h3>
+                          <p className={`text-sm mb-3 ${isDark ? 'text-white/50' : 'text-gray-400'}`}>{album.date} · {album.location}</p>
+                          <div className={`flex items-center gap-3 text-xs ${isDark ? 'text-white/30' : 'text-gray-400'}`}>
+                            <span className="flex items-center gap-1"><PhotoIcon /> {album.photoCount}</span>
+                            <span className="flex items-center gap-1"><MicIcon /> {album.storiesRecorded} stories</span>
+                          </div>
+                          {album.hasRecap && (
+                            <Link 
+                              href={`/album/${album.id}/storybook?mode=watch`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center gap-1 mt-3 px-3 py-1.5 rounded-full bg-cyan-500/20 text-cyan-400 text-xs border border-cyan-500/30 hover:bg-cyan-500/30 transition-colors"
+                            >
+                              <PlayIcon />
+                              Play Storybook
+                            </Link>
+                          )}
+                        </div>
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            ))}
+            
+            {/* End marker */}
+            <div className="relative">
+              <div className="absolute left-6 md:left-1/2 w-3 h-3 -ml-1.5 rounded-full bg-cyan-500/30" />
             </div>
           </div>
-        </>
-      )}
+        </div>
+      </div>
+    );
+  };
 
-      {/* Global styles */}
+  return (
+    <div className="min-h-screen relative overflow-x-hidden theme-page" style={{ background: isDark ? '#0d0b09' : 'var(--bg-primary)' }}>
+      {/* ================================================================== */}
+      {/* VIEW MODE TOGGLE - Enhanced */}
+      {/* ================================================================== */}
+      <div className="fixed top-4 right-4 z-40">
+        <div className={`flex items-center gap-1 p-1.5 rounded-full backdrop-blur-md shadow-xl ${
+          isDark ? 'bg-black/60 border border-white/10' : 'bg-white/80 border border-gray-200 shadow-lg'
+        }`}>
+          {[
+            { id: 'cinema' as ViewMode, icon: <FilmIcon />, label: 'Cinema' },
+            { id: 'grid' as ViewMode, icon: <GridIcon />, label: 'Grid' },
+            { id: 'timeline' as ViewMode, icon: <TimelineIcon />, label: 'Timeline' },
+          ].map((mode) => (
+            <button
+              key={mode.id}
+              onClick={() => setViewMode(mode.id)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-full text-sm font-medium transition-all duration-300 ${
+                viewModeState === mode.id 
+                  ? 'bg-gradient-to-r from-cyan-500 to-cyan-600 text-white shadow-lg shadow-cyan-500/30' 
+                  : isDark ? 'text-white/50 hover:text-white hover:bg-white/10' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
+              }`}
+            >
+              {mode.icon}
+              <span className="hidden md:inline">{mode.label}</span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* Render current view */}
+      {viewModeState === 'cinema' && renderCinemaView()}
+      {viewModeState === 'grid' && renderGridView()}
+      {viewModeState === 'timeline' && renderTimelineView()}
+
+      {/* Album Modal */}
+      {showModal && (
+        <AlbumModal 
+          album={selectedAlbum}
+          allAlbums={allAlbums}
+          onClose={() => { setShowModal(false); setSelectedAlbum(null); }}
+          onAlbumClick={(a) => { setSelectedAlbum(a); }}
+        />
+      )}
+      
       <style jsx global>{`
-        .scrollbar-hide::-webkit-scrollbar {
-          display: none;
+        .scrollbar-hide::-webkit-scrollbar { display: none; }
+        .scrollbar-hide { -ms-overflow-style: none; scrollbar-width: none; }
+        
+        @keyframes grain {
+          0%, 100% { transform: translate(0, 0); }
+          10% { transform: translate(-2%, -2%); }
+          20% { transform: translate(2%, 2%); }
+          30% { transform: translate(-1%, 1%); }
+          40% { transform: translate(1%, -1%); }
+          50% { transform: translate(-2%, 2%); }
+          60% { transform: translate(2%, -2%); }
+          70% { transform: translate(-1%, -1%); }
+          80% { transform: translate(1%, 1%); }
+          90% { transform: translate(-2%, -2%); }
+        }
+        .animate-grain {
+          animation: grain 0.5s steps(1) infinite;
         }
       `}</style>
     </div>

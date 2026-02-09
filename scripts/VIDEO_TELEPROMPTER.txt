@@ -1,0 +1,42 @@
+=== LIVING MEMORY — 3-MIN VIDEO TELEPROMPTER ===
+Read naturally. Pause between sections. Show the app as you mention it.
+
+--- 0:00 HOOK ---
+Every family has a shoebox. Photos that fade. Stories that get lost. But what if those stories could live forever?
+
+--- 0:10 POSITIONING ---
+Remento proved the need — people want to preserve family stories. Living Memory is the AI-native version: voice, video, scale. We use Gemini 3 to turn scattered photos into narrated memory films you can actually share.
+
+--- 0:35 EULOGY / EVA ---
+We were inspired by the idea of a companion that remembers — like the Eulogy concept. Not morbid. Hopeful. Someone who listens, asks the questions you've always wanted to ask, and keeps your stories safe.
+
+[SHOW INTRO — EVA speaking]
+
+This is EVA — our AI companion. She's powered by Gemini Live. You don't just upload photos. You talk to her. Show her. Tell her the story. She remembers every word.
+
+--- 1:10 CAPTURE TYPES ---
+There are three ways to add memories. Point your camera at a physical photo — we detect and extract it. Or upload from your gallery. Or scan an old print in a frame. Either way, you're not just adding a file. You're starting a conversation.
+
+[DEMO: Camera scan, gallery upload]
+
+Once you've captured a photo, EVA asks. Who's in this? What happened? Why did it matter? You talk. She listens. She extracts the facts — who, what, when, where, why — and builds a story. No forms. No questionnaires. Just a conversation.
+
+--- 1:50 REMENTO-STYLE ---
+Remento made books. We make films. You drag photos into the order you want. The AI generates narration that fits — opening, middle, closing. It knows the whole album. It fills in gaps. It tells one coherent story.
+
+--- 2:15 ANIMATIONS ---
+Photos don't just sit there. We animate them. VEO 3 from Google creates cinematic, lifelike motion. Grok Imagine gives you creative alternatives — and it's more flexible with content like family photos with kids.
+
+[SHOW VEO clip, Grok clip]
+
+Not every photo needs AI animation. Ken Burns gives every image gentle motion — pan, zoom — for free. And if you don't want a full film, you can create an animated scrapbook. A digital keepsake that breathes with your stories.
+
+[SHOW Scrapbook]
+
+--- 2:45 EXPORT ---
+When you're ready, we stitch everything together. Animated clips, AI narration, synced to each segment. You get a video you can download. Share. Give as a gift.
+
+[SHOW Export, play result]
+
+--- 3:00 CLOSE ---
+Living Memory. Your stories will live here forever. Preserve them while the people who lived them are still here.

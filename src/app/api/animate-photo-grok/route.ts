@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { generateGrokVideoWithPolling, GrokVideoConfig } from '@/lib/grok-imagine-service';
+import { buildAnimationPrompt } from '@/lib/animation-styles';
 
 /**
  * POST /api/animate-photo-grok
@@ -18,7 +19,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { photoUrl, photoBase64, storyText, duration = 5 } = body;
+    const { photoUrl, photoBase64, storyText, duration = 5, animationStyle = 'cinematic' } = body;
 
     console.log('🎬 [Grok Imagine] Request received. photoUrl:', photoUrl ? 'yes' : 'no', 'photoBase64:', photoBase64 ? 'yes' : 'no');
 
@@ -40,10 +41,8 @@ export async function POST(request: NextRequest) {
 
     console.log('🎬 [Grok Imagine] Starting animation with URL:', imageUrl.substring(0, 100));
 
-    // Build animation prompt
-    const animationPrompt = storyText 
-      ? `Bring this photograph to life with natural, cinematic animation. The photo shows: ${storyText}. Add subtle movement like wind in hair and clothes, gentle breathing, environmental motion like leaves or water, light flickering. Keep the main subject stable while the environment comes alive. Smooth, natural motion.`
-      : 'Bring this photograph to life with natural, cinematic animation. Add subtle movement like wind in hair and clothes, gentle breathing, environmental motion like leaves or water, light flickering. Keep the main subject stable while the environment comes alive. Smooth, natural motion.';
+    // Build style-specific animation prompt
+    const animationPrompt = buildAnimationPrompt(animationStyle, storyText || undefined);
 
     const config: GrokVideoConfig = {
       duration: Math.min(Math.max(duration, 1), 15), // Clamp to 1-15 seconds
@@ -89,6 +88,7 @@ export async function POST(request: NextRequest) {
         videoBase64: videoBase64,
         duration: result.duration,
         provider: 'grok-imagine',
+        animationStyle,
         message: 'Photo animated successfully with Grok Imagine',
       });
     }

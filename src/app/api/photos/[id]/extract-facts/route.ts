@@ -76,7 +76,7 @@ export async function POST(
     const supabase = createServerClient();
     
     // Check if messages were provided in request body
-    let body: { messages?: Array<{ role: string; content: string }> } = {};
+    let body: { messages?: Array<{ role: string; content: string }>; userName?: string } = {};
     try {
       body = await request.json();
       console.log('Received body:', JSON.stringify(body, null, 2));
@@ -90,8 +90,9 @@ export async function POST(
     // Option 1: Use messages from request body
     if (body.messages && Array.isArray(body.messages) && body.messages.length > 0) {
       console.log('Using messages from body, count:', body.messages.length);
+      const displayName = body.userName || 'User';
       conversationText = body.messages
-        .map(m => `${m.role === 'user' ? 'User' : 'AI'}: ${m.content}`)
+        .map(m => `${m.role === 'user' ? displayName : 'AI'}: ${m.content}`)
         .join('\n');
       console.log('Conversation text:', conversationText.substring(0, 500));
     } else {
@@ -130,7 +131,7 @@ export async function POST(
           (a, b) => (a.timestamp_ms || 0) - (b.timestamp_ms || 0)
         );
         conversationText = sortedMessages
-          .map(m => `${m.role === 'user' ? 'User' : 'AI'}: ${m.content}`)
+          .map(m => `${m.role === 'user' ? (body.userName || 'User') : 'AI'}: ${m.content}`)
           .join('\n');
       } else if (conversation.transcript) {
         // Fallback to transcript JSON
@@ -138,7 +139,7 @@ export async function POST(
           const messages = JSON.parse(conversation.transcript);
           conversationText = messages
             .map((m: { role: string; content: string }) => 
-              `${m.role === 'user' ? 'User' : 'AI'}: ${m.content}`
+              `${m.role === 'user' ? (body.userName || 'User') : 'AI'}: ${m.content}`
             )
             .join('\n');
         } catch {

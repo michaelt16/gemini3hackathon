@@ -11,7 +11,8 @@ export async function GET() {
 
     const { data: events, error: eventsError } = await supabase
       .from('events')
-      .select('id, title, album_type, date_start, date_end, location, summary, cover_photo_id, created_at, video_url')
+      .select('id, title, album_type, date_start, date_end, location, summary, cover_photo_id, created_at, video_url, display_order')
+      .order('display_order', { ascending: true })
       .order('created_at', { ascending: false })
 
     if (eventsError) {
@@ -68,11 +69,30 @@ export async function GET() {
       }
     }
 
+    // Fetch album members for all events
+    const { data: albumMembers } = await supabase
+      .from('album_members')
+      .select('event_id, member_id, name, avatar_color, relationship')
+      .in('event_id', eventIds)
+
+    const membersByEvent: Record<string, Array<{ id: string; name: string; avatar_color: string; relationship?: string }>> = {}
+    for (const m of albumMembers ?? []) {
+      if (!membersByEvent[m.event_id]) membersByEvent[m.event_id] = []
+      const idx = membersByEvent[m.event_id].length;
+      membersByEvent[m.event_id].push({
+        id: m.member_id || `${m.name}-${m.event_id}-${idx}`,
+        name: m.name,
+        avatar_color: m.avatar_color,
+        relationship: m.relationship,
+      })
+    }
+
     const withMeta = events.map((e) => ({
       ...e,
       photo_count: photoCountByEvent[e.id] ?? 0,
       stories_count: storiesCountByEvent[e.id] ?? 0,
       cover_url: coverByEvent[e.id] || null,
+      members: membersByEvent[e.id] || [],
     }))
 
     return NextResponse.json(withMeta)

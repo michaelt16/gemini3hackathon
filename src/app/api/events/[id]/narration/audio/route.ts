@@ -1,10 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createServerClient } from '@/lib/supabase/server';
+import { generateTTS } from '@/lib/voice-service';
 
 /**
  * POST /api/events/[id]/narration/audio
  * Generate audio for all segments in the album narration.
- * Stores each segment's audio and combines into full narration audio.
+ * Supports: Google Cloud TTS (default) or ElevenLabs cloned voice (pass voiceId).
+ * Body: { voiceId?: string } - if provided, uses ElevenLabs cloned voice
  */
 
 interface ScriptSegment {
@@ -26,6 +28,17 @@ export async function POST(
       return NextResponse.json({ error: 'Event ID required' }, { status: 400 });
     }
 
+    // Check for cloned voice ID in body
+    let voiceId: string | null = null;
+    try {
+      const body = await request.json();
+      voiceId = body.voiceId || null;
+    } catch {
+      // No body or invalid JSON — use default Google TTS
+    }
+
+    const useElevenLabs = !!voiceId && !!process.env.ELEVENLABS_API_KEY;
+
     const supabase = createServerClient();
 
     // Get existing narration
@@ -45,44 +58,64 @@ export async function POST(
       return NextResponse.json({ error: 'No segments to generate audio for' }, { status: 400 });
     }
 
-    const apiKey = process.env.GOOGLE_CLOUD_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json({ error: 'GOOGLE_CLOUD_API_KEY not configured' }, { status: 500 });
-    }
-
-    const ttsUrl = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
-
     // Generate audio for each segment
     const audioSegments: { photo_id: string; audio_base64: string; duration: number }[] = [];
     
     for (const segment of segments) {
-      const ttsRequest = {
-        input: { text: segment.text },
-        voice: {
-          languageCode: 'en-US',
-          name: 'en-US-Studio-O',
-          ssmlGender: 'FEMALE',
-        },
-        audioConfig: {
-          audioEncoding: 'MP3',
-          speakingRate: 0.95,
-          pitch: 0,
-        },
-      };
+      let audioBase64: string;
 
-      const ttsResponse = await fetch(ttsUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(ttsRequest),
-      });
+      if (useElevenLabs && voiceId) {
+        // Use ElevenLabs with cloned voice
+        try {
+          console.log(`Generating ElevenLabs TTS for segment ${segment.order} with voice ${voiceId}`);
+          const audioBuffer = await generateTTS(segment.text, voiceId, {
+            stability: 0.5,
+            similarityBoost: 0.75,
+            style: 0.0,
+            useSpeakerBoost: true,
+          });
+          audioBase64 = audioBuffer.toString('base64');
+        } catch (err) {
+          console.error(`ElevenLabs TTS failed for segment ${segment.order}:`, err);
+          continue;
+        }
+      } else {
+        // Use Google Cloud TTS (default)
+        const apiKey = process.env.GOOGLE_CLOUD_API_KEY;
+        if (!apiKey) {
+          return NextResponse.json({ error: 'GOOGLE_CLOUD_API_KEY not configured' }, { status: 500 });
+        }
+        const ttsUrl = `https://texttospeech.googleapis.com/v1/text:synthesize?key=${apiKey}`;
+        
+        const ttsRequest = {
+          input: { text: segment.text },
+          voice: {
+            languageCode: 'en-US',
+            name: 'en-US-Studio-O',
+            ssmlGender: 'FEMALE',
+          },
+          audioConfig: {
+            audioEncoding: 'MP3',
+            speakingRate: 0.95,
+            pitch: 0,
+          },
+        };
 
-      if (!ttsResponse.ok) {
-        console.error(`TTS failed for segment ${segment.order}`);
-        continue;
+        const ttsResponse = await fetch(ttsUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(ttsRequest),
+        });
+
+        if (!ttsResponse.ok) {
+          console.error(`Google TTS failed for segment ${segment.order}`);
+          continue;
+        }
+
+        const ttsData = await ttsResponse.json();
+        audioBase64 = ttsData.audioContent;
       }
 
-      const ttsData = await ttsResponse.json();
-      const audioBase64 = ttsData.audioContent;
       const duration = Math.ceil(segment.word_count / 2.5); // ~2.5 words per second
 
       // Upload to storage

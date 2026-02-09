@@ -103,6 +103,7 @@ export default function IntroPage() {
   const [orbScale, setOrbScale] = useState(0);
   const [showNameInput, setShowNameInput] = useState(false);
   const [userName, setUserName] = useState('');
+  const [inviteCode, setInviteCode] = useState('');
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [isGeneratingAudio, setIsGeneratingAudio] = useState(false);
   
@@ -424,6 +425,27 @@ Keep responses brief and emotional. Do not add any extra commentary.`,
     // Store name in localStorage
     localStorage.setItem('userName', userName.trim());
     
+    // Register user in database (non-blocking)
+    // Only send inviteCode if the user actually typed one — otherwise standalone account
+    const trimmedInvite = inviteCode.trim();
+    fetch('/api/auth/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: userName.trim(), inviteCode: trimmedInvite || undefined }),
+    }).then(async (res) => {
+      if (res.ok) {
+        const data = await res.json();
+        if (data.member) {
+          // Set as active user including family_code
+          localStorage.setItem('active_user_id', data.member.id);
+          localStorage.setItem('active_user_name', data.member.name);
+          localStorage.setItem('active_user_color', data.member.avatar_color);
+          localStorage.setItem('active_user_relationship', data.member.relationship || 'Self');
+          localStorage.setItem('active_user_family_code', data.member.family_code || '');
+        }
+      }
+    }).catch(() => { /* non-critical */ });
+    
     // Hide name input, clear old text, start tutorial greeting
     setShowNameInput(false);
     setDisplayedText(''); // Clear the old "But first... what should I call you?" text
@@ -470,7 +492,7 @@ Keep responses brief and emotional. Do not add any extra commentary.`,
         setTimeout(() => setTutorialPhase('options'), 500);
       }
     }, 30);
-  }, [userName]);
+  }, [userName, inviteCode]);
   
   // Handle tutorial option: Start preserving - ask for album name
   const handleStartTutorial = useCallback(() => {
@@ -569,11 +591,14 @@ Keep responses brief and emotional. Do not add any extra commentary.`,
     }, 1000);
   }, [router, disconnectLiveAPI]);
   
-  // Skip intro
+  // Skip intro — jump straight to registration form
   const handleSkip = useCallback(() => {
     disconnectLiveAPI();
-    router.push('/album');
-  }, [router, disconnectLiveAPI]);
+    // Jump to the last scene so the name input shows
+    setCurrentSceneIndex(SCENES.length - 1);
+    setCurrentLineIndex(SCENES[SCENES.length - 1].lines.length);
+    setShowNameInput(true);
+  }, [disconnectLiveAPI]);
   
   // Keep startIntro in a ref so we can call it from mount effect without re-running
   const startIntroRef = useRef(startIntro);
@@ -920,6 +945,13 @@ Keep responses brief and emotional. Do not add any extra commentary.`,
               autoFocus
               className="w-full bg-transparent border-b-2 border-cyan-500/50 focus:border-cyan-400 text-white text-2xl text-center py-4 outline-none placeholder-white/30 transition-colors"
               style={{ fontFamily: 'var(--font-crimson), Georgia, serif' }}
+            />
+            <input
+              type="text"
+              value={inviteCode}
+              onChange={(e) => setInviteCode(e.target.value)}
+              placeholder="Family invite code (optional)"
+              className="w-full bg-transparent border-b border-white/20 focus:border-cyan-400/50 text-white/70 text-sm text-center py-2 outline-none placeholder-white/20 transition-colors"
             />
             <button
               type="submit"

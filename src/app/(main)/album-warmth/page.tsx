@@ -596,7 +596,7 @@ export default function AlbumWarmthPage() {
       
       {/* EVA Modal */}
       {showEVAModal && (
-        <EVACompanionModal onClose={() => setShowEVAModal(false)} />
+        <EVACompanionModal isOpen={showEVAModal} onClose={() => setShowEVAModal(false)} />
       )}
     </div>
   );

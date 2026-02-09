@@ -14,12 +14,13 @@ interface GenerateStoryRequest {
     context?: string;
     timestamp?: number;
   }>;
+  userName?: string;
 }
 
 export async function POST(request: NextRequest) {
   try {
     const body: GenerateStoryRequest = await request.json();
-    const { messages, photos } = body;
+    const { messages, photos, userName } = body;
 
     console.log('=== Story Generation Request ===');
     console.log('Session ID:', body.sessionId);
@@ -41,7 +42,7 @@ export async function POST(request: NextRequest) {
     const conversationText = messages
       .map(msg => {
         const time = new Date(msg.timestamp).toLocaleTimeString();
-        const role = msg.role === 'user' ? 'User' : 'AI';
+        const role = msg.role === 'user' ? (userName || 'User') : 'AI';
         return `[${time}] ${role}: ${msg.content}`;
       })
       .join('\n');
