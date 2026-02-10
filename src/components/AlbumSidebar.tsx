@@ -28,6 +28,7 @@ const SettingsIcon = ({ className = "w-6 h-6" }: { className?: string }) => (
 
 export default function AlbumSidebar() {
   const { sidebarCollapsed } = useSidebar();
+  const { openModal: openCreateAlbum } = useCreateAlbum();
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [isHovered, setIsHovered] = useState(false);
 

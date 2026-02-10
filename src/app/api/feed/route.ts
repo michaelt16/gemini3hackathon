@@ -338,8 +338,8 @@ export async function GET(request: Request) {
         albumId: p.event_id || '',
         photoUrl: photo?.original_url || photo?.thumbnail_url,
         questionText: p.question,
-        answerText: p.answer_text,
-        answeredAt: p.answered_at,
+        answerText: p.answer_text ?? undefined,
+        answeredAt: p.answered_at ?? undefined,
         answeredByName: answerer?.name,
         answeredByColor: answerer?.color,
       });

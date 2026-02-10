@@ -424,7 +424,7 @@ async function extractFullFrameWithCorrection(
     
     // Enhance the image
     const processedBuffer = await pipeline
-      .sharpen({ sigma: 1, flat: 1, jagged: 2 }) // Sharpen for clean edges
+      .sharpen(1, 1, 2) // Sharpen for clean edges
       .normalize() // Auto-level colors
       .modulate({ brightness: 1.05, saturation: 1.1 }) // Slight enhancement
       .jpeg({ quality: 95, mozjpeg: true }) // High quality JPEG

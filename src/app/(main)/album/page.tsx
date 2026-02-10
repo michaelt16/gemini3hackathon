@@ -17,10 +17,14 @@ interface Album {
   date: string;
   location: string;
   photoCount: number;
+  contributors: string[];
+  hasSummary: boolean;
   hasRecap: boolean;
   coverUrl: string | null;
-  videoUrl: string | null;
+  videoUrl?: string | null;
   storiesRecorded: number;
+  isPortrait?: boolean;
+  status?: 'gathering' | 'ready' | 'complete';
   members?: { id: string; name: string; avatar_color: string }[];
   perspectiveCount?: number;
   featuredQuote?: string;
@@ -39,7 +43,10 @@ function eventToAlbum(e: any): Album {
     date: e.date_start 
       ? new Date(e.date_start).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) 
       : (e.created_at ? new Date(e.created_at).toLocaleDateString('en-US', { month: 'long', year: 'numeric' }) : ''),
-    location: e.location || '', photoCount: e.photo_count ?? 0, hasRecap: !!e.video_url,
+    location: e.location || '', photoCount: e.photo_count ?? 0,
+    contributors: members.map((m: { name: string }) => m.name),
+    hasSummary: !!e.summary,
+    hasRecap: !!e.video_url,
     coverUrl: e.cover_url ?? null, videoUrl: e.video_url ?? null, storiesRecorded: storiesCount,
     perspectiveCount: members.length > 0 ? members.length : (storiesCount > 0 ? Math.min(storiesCount, 3) : 0),
     featuredQuote: e.summary || undefined, 

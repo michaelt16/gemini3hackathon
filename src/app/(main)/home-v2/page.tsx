@@ -560,6 +560,7 @@ export default function HomeV2Page() {
       {/* EVA Companion Modal */}
       {showEVAModal && (
         <EVACompanionModal
+          isOpen={showEVAModal}
           onClose={handleEVAModalClose}
         />
       )}

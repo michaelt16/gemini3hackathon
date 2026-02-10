@@ -296,7 +296,7 @@ export async function generateVideoWithPolling(
     await new Promise((resolve) => setTimeout(resolve, pollInterval * 1000));
 
     // Poll for status
-    result = await pollVideoGeneration(result.operationId);
+    result = await pollVideoGeneration(result.operationId!);
   }
 
   return result;

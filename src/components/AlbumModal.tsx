@@ -23,10 +23,14 @@ interface Album {
   hasSummary: boolean;
   hasRecap: boolean;
   coverUrl: string | null;
+  videoUrl?: string | null;
   storiesRecorded: number;
   isPortrait?: boolean;
   status?: 'gathering' | 'ready' | 'complete';
   members?: AlbumMember[];
+  perspectiveCount?: number;
+  featuredQuote?: string;
+  featuredQuoteAuthor?: string;
 }
 
 interface DbPhoto {

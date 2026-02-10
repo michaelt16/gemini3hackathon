@@ -2,10 +2,107 @@
 
 import Link from 'next/link';
 import Image from 'next/image';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 
 const EVAOrb = dynamic(() => import('@/components/EVAOrb'), { ssr: false });
+
+// ============================================================================
+// ANIMATION VIDEOS — cycles pic1 → pic9 → pic1 …
+// ============================================================================
+
+const HERO_VIDEOS = [
+  '/animations/pic1.mp4',
+  '/animations/pic2.mp4',
+  '/animations/pic3.mp4',
+  '/animations/pic4.mp4',
+  '/animations/pic5.mp4',
+  '/animations/pic6.mp4',
+  '/animations/pic7.mp4',
+  '/animations/pic8.mp4',
+  '/animations/pic9.mp4',
+];
+
+function HeroBackground() {
+  const videoARef = useRef<HTMLVideoElement>(null);
+  const videoBRef = useRef<HTMLVideoElement>(null);
+  const [activeSlot, setActiveSlot] = useState<'A' | 'B'>('A');
+  const indexRef = useRef(0);
+
+  // Advance to the next video in the cycle
+  const advance = useCallback(() => {
+    indexRef.current = (indexRef.current + 1) % HERO_VIDEOS.length;
+    const nextSrc = HERO_VIDEOS[indexRef.current];
+
+    if (activeSlot === 'A') {
+      // Load next into B, crossfade A→B
+      const vb = videoBRef.current;
+      if (vb) {
+        vb.src = nextSrc;
+        vb.load();
+        vb.play().catch(() => {});
+      }
+      setActiveSlot('B');
+    } else {
+      // Load next into A, crossfade B→A
+      const va = videoARef.current;
+      if (va) {
+        va.src = nextSrc;
+        va.load();
+        va.play().catch(() => {});
+      }
+      setActiveSlot('A');
+    }
+  }, [activeSlot]);
+
+  // Start the first video on mount
+  useEffect(() => {
+    const va = videoARef.current;
+    if (va) {
+      va.src = HERO_VIDEOS[0];
+      va.load();
+      va.play().catch(() => {});
+    }
+  }, []);
+
+  // Listen for "ended" on whichever slot is active
+  useEffect(() => {
+    const activeVideo = activeSlot === 'A' ? videoARef.current : videoBRef.current;
+    if (!activeVideo) return;
+    const onEnded = () => advance();
+    activeVideo.addEventListener('ended', onEnded);
+    return () => activeVideo.removeEventListener('ended', onEnded);
+  }, [activeSlot, advance]);
+
+  return (
+    <>
+      <video
+        ref={videoARef}
+        muted
+        playsInline
+        preload="auto"
+        className="absolute left-0 right-0 bottom-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out"
+        style={{
+          top: '8vh',
+          filter: 'brightness(0.35) saturate(0.6)',
+          opacity: activeSlot === 'A' ? 1 : 0,
+        }}
+      />
+      <video
+        ref={videoBRef}
+        muted
+        playsInline
+        preload="auto"
+        className="absolute left-0 right-0 bottom-0 w-full h-full object-cover transition-opacity duration-1000 ease-in-out"
+        style={{
+          top: '8vh',
+          filter: 'brightness(0.35) saturate(0.6)',
+          opacity: activeSlot === 'B' ? 1 : 0,
+        }}
+      />
+    </>
+  );
+}
 
 // ============================================================================
 // SCROLL REVEAL
@@ -20,27 +117,7 @@ function Reveal({ children, className = '' }: { children: React.ReactNode; class
 // ============================================================================
 
 export default function HomePage() {
-  const videoRef = useRef<HTMLVideoElement>(null);
   const [scrollY, setScrollY] = useState(0);
-
-  useEffect(() => {
-    const video = videoRef.current;
-    if (!video) return;
-    const onTime = () => {
-      if (video.currentTime >= 9) {
-        video.currentTime = 0;
-        video.play();
-      }
-    };
-    const onEnd = () => { video.currentTime = 0; video.play(); };
-    video.addEventListener('timeupdate', onTime);
-    video.addEventListener('ended', onEnd);
-    video.currentTime = 0;
-    return () => {
-      video.removeEventListener('timeupdate', onTime);
-      video.removeEventListener('ended', onEnd);
-    };
-  }, []);
 
   useEffect(() => {
     const h = () => setScrollY(window.scrollY);
@@ -78,15 +155,8 @@ export default function HomePage() {
           </Link>
         </div>
 
-        {/* Video background */}
-        <video
-          ref={videoRef}
-          autoPlay muted playsInline preload="metadata"
-          className="absolute left-0 right-0 bottom-0 w-full object-cover"
-          style={{ top: '8vh', filter: 'brightness(0.35) saturate(0.6)' }}
-        >
-          <source src="/remento.mp4" type="video/mp4" />
-        </video>
+        {/* Animated photo slideshow background — pic1→9 crossfading loop */}
+        <HeroBackground />
 
         {/* Cinematic vignette */}
         <div

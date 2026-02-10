@@ -110,7 +110,8 @@ export default function LoginPage() {
                   }`}
                   style={{
                     backgroundColor: member.avatar_color,
-                    ringOffsetColor: isDark ? '#0a0a0c' : '#f5f3ef',
+                    // @ts-expect-error -- Tailwind ring-offset-color via CSS variable
+                    '--tw-ring-offset-color': isDark ? '#0a0a0c' : '#f5f3ef',
                   }}
                 >
                   {member.name.charAt(0)}

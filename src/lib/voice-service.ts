@@ -50,7 +50,7 @@ export async function cloneVoice(
     const formData = new globalThis.FormData();
     
     files.forEach((file, index) => {
-      const blob = new Blob([file], { type: 'audio/mpeg' });
+      const blob = new Blob([new Uint8Array(file)], { type: 'audio/mpeg' });
       formData.append('files', blob, `voice-sample-${index + 1}.mp3`);
     });
     
